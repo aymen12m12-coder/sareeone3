@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { useMutation } from '@tanstack/react-query';
-import { ArrowRight, Trash2 } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { ArrowRight, Trash2, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,15 +9,53 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { useCart } from '../contexts/CartContext';
+import { useLocation as useCoordinates } from '../contexts/LocationContext';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import type { InsertOrder } from '@shared/schema';
+import type { InsertOrder, Restaurant } from '@shared/schema';
+import { calculateDistance, calculateDeliveryFee } from '../utils/location';
 
 export default function CartPage() {
   const [, setLocation] = useLocation();
-  const { state, removeItem, updateQuantity, clearCart } = useCart();
-  const { items, subtotal, total } = state;
+  const { state, removeItem, updateQuantity, clearCart, setDeliveryFee } = useCart();
+  const { items, subtotal, total, deliveryFee } = state;
   const { toast } = useToast();
+  const { location: userLocation, getCurrentLocation } = useCoordinates();
+
+  const restaurantId = items[0]?.restaurantId;
+
+  const { data: restaurant } = useQuery<Restaurant>({
+    queryKey: ['/api/restaurants', restaurantId],
+    enabled: !!restaurantId,
+  });
+
+  // Calculate delivery fee whenever subtotal or location changes
+  useEffect(() => {
+    if (!restaurant) return;
+
+    let fee = 5; // Default fee
+
+    if (userLocation.position && restaurant.latitude && restaurant.longitude) {
+      const distance = calculateDistance(
+        userLocation.position.coords.latitude,
+        userLocation.position.coords.longitude,
+        parseFloat(String(restaurant.latitude)),
+        parseFloat(String(restaurant.longitude))
+      );
+
+      fee = calculateDeliveryFee(distance, {
+        baseFee: parseFloat(String(restaurant.deliveryFee || 0)),
+        perKmFee: parseFloat(String(restaurant.perKmFee || 0)),
+        minFee: 5,
+        maxFee: 50,
+        subtotal: subtotal
+      });
+    } else {
+      fee = parseFloat(String(restaurant.deliveryFee || 5));
+    }
+
+    setDeliveryFee(fee);
+  }, [restaurant, userLocation.position, subtotal]);
 
   const [orderForm, setOrderForm] = useState({
     customerName: '',
@@ -84,9 +122,11 @@ export default function CartPage() {
       paymentMethod: orderForm.paymentMethod,
       items: JSON.stringify(items),
       subtotal: subtotal.toString(),
-      deliveryFee: "5",
+      deliveryFee: deliveryFee.toString(),
       total: total.toString(),
       restaurantId: items[0]?.restaurantId || undefined,
+      customerLocationLat: userLocation.position?.coords.latitude.toString(),
+      customerLocationLng: userLocation.position?.coords.longitude.toString(),
       status: 'pending',
     };
 
@@ -192,8 +232,22 @@ export default function CartPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">رسوم التوصيل</span>
-                <span className="text-foreground">5 ريال</span>
+                <span className="text-foreground">{deliveryFee} ريال</span>
               </div>
+              {userLocation.error && (
+                <p className="text-xs text-destructive mt-1">{userLocation.error}</p>
+              )}
+              {!userLocation.position && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full mt-2 text-xs h-8"
+                  onClick={getCurrentLocation}
+                >
+                  <MapPin className="h-3 w-3 ml-1" />
+                  تحديد موقعي بدقة لحساب التوصيل
+                </Button>
+              )}
               <div className="border-t border-border pt-2 mt-2">
                 <div className="flex justify-between font-bold">
                   <span className="text-foreground">الإجمالي</span>

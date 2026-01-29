@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useLocation } from 'wouter';
-import { ArrowRight, MapPin, Clock, Phone, CheckCircle, Truck, Package, User } from 'lucide-react';
+import { ArrowRight, MapPin, Clock, Phone, CheckCircle, Truck, Package, User, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
+import RatingDialog from '@/components/RatingDialog';
 
 interface OrderStatus {
   id: string;
@@ -26,12 +27,15 @@ interface OrderDetails {
   estimatedTime: string;
   driverName?: string;
   driverPhone?: string;
+  restaurantName?: string;
   createdAt: Date;
 }
 
 export default function OrderTrackingPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const [, setLocation] = useLocation();
+  const [showRatingDialog, setShowRatingDialog] = useState(false);
+  const [hasShownRating, setHasShownRating] = useState(false);
   
   // جلب بيانات الطلب الحقيقية من API مع تحديثات سريعة
   const { data: orderData, isLoading, error, refetch } = useQuery<{order: OrderDetails, tracking: OrderStatus[]}>({
@@ -39,6 +43,13 @@ export default function OrderTrackingPage() {
     enabled: !!orderId,
     refetchInterval: 5000, // تحديث كل 5 ثوانِ للحصول على تحديثات سريعة
   });
+
+  useEffect(() => {
+    if (orderData?.order.status === 'delivered' && !hasShownRating) {
+      setShowRatingDialog(true);
+      setHasShownRating(true);
+    }
+  }, [orderData?.order.status, hasShownRating]);
 
   if (isLoading) {
     return (
