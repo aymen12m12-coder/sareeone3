@@ -2,6 +2,7 @@ import express from "express";
 import { storage } from "../storage";
 import { insertUserSchema, insertUserAddressSchema, insertRatingSchema, type UserAddress } from "../../shared/schema";
 import { randomUUID } from "crypto";
+import { AdvancedDatabaseStorage } from "../db-advanced";
 
 const router = express.Router();
 
@@ -231,7 +232,7 @@ router.get("/:id/orders", async (req, res) => {
 router.post("/orders/:orderId/review", async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { customerId, rating, comment } = req.body;
+    const { customerId, rating, comment, driverRating, driverComment } = req.body;
 
     // التحقق من وجود الطلب
     const order = await storage.getOrder(orderId);
@@ -240,27 +241,34 @@ router.post("/orders/:orderId/review", async (req, res) => {
     }
 
     // التحقق من أن العميل يملك هذا الطلب
-    if (order.customerId !== customerId) {
+    // في حالة عدم توفر customerId في الطلب (طلب سريع)، سنتجاوز التحقق أو نستخدم الهاتف
+    if (order.customerId && order.customerId !== customerId) {
       return res.status(403).json({ error: "غير مصرح لك بتقييم هذا الطلب" });
     }
 
-    // التحقق من صحة بيانات التقييم
+    // التحقق من صحة بيانات التقييم للمطعم
     if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ error: "التقييم يجب أن يكون بين 1 و 5" });
+      return res.status(400).json({ error: "تقييم المطعم يجب أن يكون بين 1 و 5" });
     }
 
     // الحصول على بيانات العميل
-    const customer = await storage.getUser(customerId);
-    if (!customer) {
-      return res.status(404).json({ error: "العميل غير موجود" });
+    let customerName = order.customerName;
+    let customerPhone = order.customerPhone || "";
+
+    if (customerId) {
+      const customer = await storage.getUser(customerId);
+      if (customer) {
+        customerName = customer.name;
+        customerPhone = customer.phone || "";
+      }
     }
 
-    // إنشاء تقييم جديد
+    // 1. إنشاء تقييم المطعم
     const reviewData = {
       orderId,
       restaurantId: order.restaurantId,
-      customerName: customer.name,
-      customerPhone: customer.phone || "",
+      customerName,
+      customerPhone,
       rating: Number(rating),
       comment: comment || null,
       isApproved: false
@@ -268,7 +276,27 @@ router.post("/orders/:orderId/review", async (req, res) => {
 
     const newReview = await storage.createRating(reviewData);
 
-    res.json(newReview);
+    // 2. إنشاء تقييم السائق إذا تم توفيره وكان هناك سائق للطلب
+    let driverReview = null;
+    if (driverRating && order.driverId) {
+      try {
+        const advStorage = new AdvancedDatabaseStorage(storage.db);
+        driverReview = await advStorage.createDriverReview({
+          orderId,
+          driverId: order.driverId,
+          rating: Number(driverRating),
+          comment: driverComment || null
+        });
+      } catch (err) {
+        console.error("خطأ في إضافة تقييم السائق:", err);
+      }
+    }
+
+    res.json({
+      success: true,
+      restaurantReview: newReview,
+      driverReview
+    });
   } catch (error) {
     console.error("خطأ في إضافة التقييم:", error);
     res.status(500).json({ error: "خطأ في الخادم" });

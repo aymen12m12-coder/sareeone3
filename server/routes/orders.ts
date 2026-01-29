@@ -2,6 +2,7 @@ import express from "express";
 import { storage } from "../storage.js";
 import { calculateDeliveryFee } from "../services/deliveryFeeService";
 import { formatCurrency } from "../../shared/utils";
+import { canOrderFromRestaurant } from "../../utils/restaurantHours";
 import { randomUUID } from "crypto";
 
 const router = express.Router();
@@ -38,6 +39,14 @@ router.post("/", async (req, res) => {
     if (!restaurant) {
       return res.status(400).json({ 
         error: "المطعم المحدد غير موجود"
+      });
+    }
+
+    // التحقق من ساعات العمل
+    const orderStatus = canOrderFromRestaurant(restaurant);
+    if (!orderStatus.canOrder) {
+      return res.status(400).json({ 
+        error: orderStatus.message || "المطعم مغلق حالياً"
       });
     }
 

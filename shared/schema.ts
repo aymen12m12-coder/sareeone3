@@ -14,7 +14,7 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-// في schema.ts، أضف هذا التصدير إذا كان مفقوداً
+
 // Customers table (alias for users)
 export const customers = users;
 
@@ -696,6 +696,11 @@ export const insertEmployeeSchema = createInsertSchema(employees).partial({
   hireDate: true,
   status: true,
   permissions: true,
+  department: true,
+  position: true,
+  salary: true,
+  address: true,
+  emergencyContact: true,
 });
 export const selectEmployeeSchema = createSelectSchema(employees);
 export type Employee = z.infer<typeof selectEmployeeSchema>;
@@ -704,6 +709,11 @@ export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export const insertAttendanceSchema = createInsertSchema(attendance).partial({
   id: true,
   date: true,
+  checkIn: true,
+  checkOut: true,
+  status: true,
+  hoursWorked: true,
+  notes: true,
 });
 export const selectAttendanceSchema = createSelectSchema(attendance);
 export type Attendance = z.infer<typeof selectAttendanceSchema>;
@@ -713,6 +723,7 @@ export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).partia
   id: true,
   status: true,
   submittedAt: true,
+  reason: true,
 });
 export const selectLeaveRequestSchema = createSelectSchema(leaveRequests);
 export type LeaveRequest = z.infer<typeof selectLeaveRequestSchema>;
@@ -763,17 +774,43 @@ export const financialReports = pgTable("financial_reports", {
 });
 
 // Re-export schemas
-export const insertDeliveryFeeSettingsSchema = createInsertSchema(deliveryFeeSettings);
+export const insertDeliveryFeeSettingsSchema = createInsertSchema(deliveryFeeSettings).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  baseFee: true,
+  perKmFee: true,
+  minFee: true,
+  maxFee: true,
+  freeDeliveryThreshold: true,
+});
 export const selectDeliveryFeeSettingsSchema = createSelectSchema(deliveryFeeSettings);
 export type DeliveryFeeSetting = z.infer<typeof selectDeliveryFeeSettingsSchema>;
 export type InsertDeliveryFeeSetting = z.infer<typeof insertDeliveryFeeSettingsSchema>;
 
-export const insertDeliveryZoneSchema = createInsertSchema(deliveryZones);
+export const insertDeliveryZoneSchema = createInsertSchema(deliveryZones).partial({
+  id: true,
+  createdAt: true,
+  isActive: true,
+  minDistance: true,
+  description: true,
+  estimatedTime: true,
+});
 export const selectDeliveryZoneSchema = createSelectSchema(deliveryZones);
 export type DeliveryZone = z.infer<typeof selectDeliveryZoneSchema>;
 export type InsertDeliveryZone = z.infer<typeof insertDeliveryZoneSchema>;
 
-export const insertFinancialReportSchema = createInsertSchema(financialReports);
+export const insertFinancialReportSchema = createInsertSchema(financialReports).partial({
+  id: true,
+  createdAt: true,
+  totalOrders: true,
+  totalRevenue: true,
+  totalDeliveryFees: true,
+  totalDriverEarnings: true,
+  totalRestaurantEarnings: true,
+  totalCompanyProfit: true,
+});
 export const selectFinancialReportSchema = createSelectSchema(financialReports);
 export type FinancialReport = z.infer<typeof selectFinancialReportSchema>;
 export type InsertFinancialReport = z.infer<typeof insertFinancialReportSchema>;
