@@ -11,6 +11,9 @@ import {
   insertAdminUserSchema,
   insertDriverSchema,
   insertMenuItemSchema,
+  insertEmployeeSchema,
+  insertAttendanceSchema,
+  insertLeaveRequestSchema,
   adminUsers,
   // تم حذف adminSessions
   categories,
@@ -28,7 +31,10 @@ import {
   drivers,
   orderTracking,
   cart,
-  favorites
+  favorites,
+  employees,
+  attendance,
+  leaveRequests
 } from "@shared/schema";
 import { DatabaseStorage } from "../db";
 
@@ -41,7 +47,7 @@ function coerceRequestData(data: any) {
   const coerced = { ...data };
   
   // Convert decimal fields to strings (Zod expects strings for decimal fields)
-  ['minimumOrder', 'deliveryFee', 'perKmFee', 'latitude', 'longitude', 'discountAmount', 'rating', 'commissionRate'].forEach(field => {
+  ['minimumOrder', 'deliveryFee', 'perKmFee', 'latitude', 'longitude', 'discountAmount', 'rating', 'commissionRate', 'salary', 'hoursWorked'].forEach(field => {
     if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
       coerced[field] = String(coerced[field]);
     } else {
@@ -73,13 +79,23 @@ function coerceRequestData(data: any) {
     }
   });
   
-  // Parse date fields
-  if (coerced.validUntil !== undefined && coerced.validUntil !== null && coerced.validUntil !== '') {
-    const date = new Date(coerced.validUntil);
-    coerced.validUntil = isNaN(date.getTime()) ? undefined : date;
-  } else {
-    coerced.validUntil = undefined;
+  // Handle permissions array
+  if (Array.isArray(coerced.permissions)) {
+    coerced.permissions = JSON.stringify(coerced.permissions);
+  } else if (coerced.permissions === null || coerced.permissions === '') {
+    coerced.permissions = undefined;
   }
+  
+  // Parse date fields
+  const dateFields = ['validUntil', 'hireDate', 'checkIn', 'checkOut', 'startDate', 'endDate', 'date'];
+  dateFields.forEach(field => {
+    if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
+      const date = new Date(coerced[field]);
+      coerced[field] = isNaN(date.getTime()) ? undefined : date;
+    } else {
+      coerced[field] = undefined;
+    }
+  });
   
   // Convert optional text/UUID fields to undefined instead of null
   ['categoryId', 'temporaryCloseReason', 'address'].forEach(field => {
@@ -110,7 +126,10 @@ const schema = {
   drivers,
   orderTracking,
   cart,
-  favorites
+  favorites,
+  employees,
+  attendance,
+  leaveRequests
 };
 
 // تم حذف middleware المصادقة - يمكن الوصول المباشر للبيانات بدون مصادقة
@@ -692,6 +711,131 @@ router.get("/reports/restaurants/:id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 }); // <-- قوس الإغلاق الصحيح
+
+// إدارة الموظفين والموارد البشرية
+router.get("/employees", async (req, res) => {
+  try {
+    const employees = await storage.getEmployees();
+    res.json(employees);
+  } catch (error) {
+    console.error("Error fetching employees:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/employees", async (req, res) => {
+  try {
+    const coercedData = coerceRequestData(req.body);
+    const validatedData = insertEmployeeSchema.parse(coercedData);
+    const newEmployee = await storage.createEmployee(validatedData);
+    res.status(201).json(newEmployee);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error creating employee:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/employees/:id", async (req, res) => {
+  try {
+    const coercedData = coerceRequestData(req.body);
+    const validatedData = insertEmployeeSchema.partial().parse(coercedData);
+    const updated = await storage.updateEmployee(req.params.id, validatedData);
+    if (!updated) return res.status(404).json({ error: "Employee not found" });
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error updating employee:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/employees/:id", async (req, res) => {
+  try {
+    const success = await storage.deleteEmployee(req.params.id);
+    if (!success) return res.status(404).json({ error: "Employee not found" });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting employee:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// إدارة الحضور
+router.get("/attendance", async (req, res) => {
+  try {
+    const { employeeId, date } = req.query;
+    const attendance = await storage.getAttendance(
+      employeeId as string,
+      date ? new Date(date as string) : undefined
+    );
+    res.json(attendance);
+  } catch (error) {
+    console.error("Error fetching attendance:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/attendance", async (req, res) => {
+  try {
+    const coercedData = coerceRequestData(req.body);
+    const validatedData = insertAttendanceSchema.parse(coercedData);
+    const newAttendance = await storage.createAttendance(validatedData);
+    res.status(201).json(newAttendance);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error creating attendance:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// طلبات الإجازة
+router.get("/leave-requests", async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    const requests = await storage.getLeaveRequests(employeeId as string);
+    res.json(requests);
+  } catch (error) {
+    console.error("Error fetching leave requests:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/leave-requests", async (req, res) => {
+  try {
+    const coercedData = coerceRequestData(req.body);
+    const validatedData = insertLeaveRequestSchema.parse(coercedData);
+    const newRequest = await storage.createLeaveRequest(validatedData);
+    res.status(201).json(newRequest);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error creating leave request:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/leave-requests/:id", async (req, res) => {
+  try {
+    const validatedData = insertLeaveRequestSchema.partial().parse(req.body);
+    const updated = await storage.updateLeaveRequest(req.params.id, validatedData);
+    if (!updated) return res.status(404).json({ error: "Leave request not found" });
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error updating leave request:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.post("/drivers", async (req, res) => {
   try {

@@ -17,7 +17,10 @@ import {
   type DriverBalance, type InsertDriverBalance,
   type DriverTransaction, type InsertDriverTransaction,
   type DriverCommission, type InsertDriverCommission,
-  type DriverWithdrawal, type InsertDriverWithdrawal
+  type DriverWithdrawal, type InsertDriverWithdrawal,
+  type Employee, type InsertEmployee,
+  type Attendance, type InsertAttendance,
+  type LeaveRequest, type InsertLeaveRequest
 } from "../shared/schema";
 import { randomUUID } from "crypto";
 
@@ -156,6 +159,21 @@ export interface IStorage {
   
   // تحديث حقل العمولة في الطلب
   updateOrderCommission(id: string, data: { commissionRate: number; commissionAmount: string; commissionProcessed: boolean }): Promise<Order | undefined>;
+
+  // HR Management
+  getEmployees(): Promise<Employee[]>;
+  getEmployee(id: string): Promise<Employee | undefined>;
+  createEmployee(employee: InsertEmployee): Promise<Employee>;
+  updateEmployee(id: string, employee: Partial<InsertEmployee>): Promise<Employee | undefined>;
+  deleteEmployee(id: string): Promise<boolean>;
+
+  getAttendance(employeeId?: string, date?: Date): Promise<Attendance[]>;
+  createAttendance(attendance: InsertAttendance): Promise<Attendance>;
+  updateAttendance(id: string, attendance: Partial<InsertAttendance>): Promise<Attendance | undefined>;
+
+  getLeaveRequests(employeeId?: string): Promise<LeaveRequest[]>;
+  createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest>;
+  updateLeaveRequest(id: string, request: Partial<InsertLeaveRequest>): Promise<LeaveRequest | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -180,6 +198,9 @@ export class MemStorage implements IStorage {
   private driverTransactions: Map<string, DriverTransaction>;
   private driverCommissions: Map<string, DriverCommission>;
   private driverWithdrawals: Map<string, DriverWithdrawal>;
+  private employeesMap: Map<string, Employee>;
+  private attendanceMap: Map<string, Attendance>;
+  private leaveRequestsMap: Map<string, LeaveRequest>;
 
   // Add db property for compatibility with routes that access it directly
   get db() {
@@ -208,6 +229,9 @@ export class MemStorage implements IStorage {
     this.driverTransactions = new Map();
     this.driverCommissions = new Map();
     this.driverWithdrawals = new Map();
+    this.employeesMap = new Map();
+    this.attendanceMap = new Map();
+    this.leaveRequestsMap = new Map();
     
     this.initializeData();
   }
@@ -1429,6 +1453,108 @@ export class MemStorage implements IStorage {
     return Array.from(this.orderTracking.values())
       .filter(tracking => tracking.orderId === orderId)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+
+  // HR Management
+  async getEmployees(): Promise<Employee[]> {
+    return Array.from(this.employeesMap.values());
+  }
+
+  async getEmployee(id: string): Promise<Employee | undefined> {
+    return this.employeesMap.get(id);
+  }
+
+  async createEmployee(employee: InsertEmployee): Promise<Employee> {
+    const id = randomUUID();
+    const newEmployee: Employee = {
+      ...employee,
+      id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      hireDate: employee.hireDate || new Date(),
+      status: employee.status || "active",
+      address: employee.address || null,
+      emergencyContact: employee.emergencyContact || null,
+      permissions: employee.permissions || null,
+    } as Employee;
+    this.employeesMap.set(id, newEmployee);
+    return newEmployee;
+  }
+
+  async updateEmployee(id: string, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
+    const existing = this.employeesMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...employee, updatedAt: new Date() } as Employee;
+    this.employeesMap.set(id, updated);
+    return updated;
+  }
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    return this.employeesMap.delete(id);
+  }
+
+  async getAttendance(employeeId?: string, date?: Date): Promise<Attendance[]> {
+    let result = Array.from(this.attendanceMap.values());
+    if (employeeId) {
+      result = result.filter(a => a.employeeId === employeeId);
+    }
+    if (date) {
+      const dateString = date.toDateString();
+      result = result.filter(a => a.date.toDateString() === dateString);
+    }
+    return result;
+  }
+
+  async createAttendance(attendance: InsertAttendance): Promise<Attendance> {
+    const id = randomUUID();
+    const newAttendance: Attendance = {
+      ...attendance,
+      id,
+      date: attendance.date || new Date(),
+      checkIn: attendance.checkIn || null,
+      checkOut: attendance.checkOut || null,
+      hoursWorked: attendance.hoursWorked || null,
+      notes: attendance.notes || null,
+    } as Attendance;
+    this.attendanceMap.set(id, newAttendance);
+    return newAttendance;
+  }
+
+  async updateAttendance(id: string, attendance: Partial<InsertAttendance>): Promise<Attendance | undefined> {
+    const existing = this.attendanceMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...attendance } as Attendance;
+    this.attendanceMap.set(id, updated);
+    return updated;
+  }
+
+  async getLeaveRequests(employeeId?: string): Promise<LeaveRequest[]> {
+    let result = Array.from(this.leaveRequestsMap.values());
+    if (employeeId) {
+      result = result.filter(r => r.employeeId === employeeId);
+    }
+    return result;
+  }
+
+  async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
+    const id = randomUUID();
+    const newRequest: LeaveRequest = {
+      ...request,
+      id,
+      status: request.status || "pending",
+      submittedAt: new Date(),
+      reason: request.reason || null,
+    } as LeaveRequest;
+    this.leaveRequestsMap.set(id, newRequest);
+    return newRequest;
+  }
+
+  async updateLeaveRequest(id: string, request: Partial<InsertLeaveRequest>): Promise<LeaveRequest | undefined> {
+    const existing = this.leaveRequestsMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...request } as LeaveRequest;
+    this.leaveRequestsMap.set(id, updated);
+    return updated;
   }
 }
 

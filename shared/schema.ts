@@ -378,6 +378,7 @@ export const employees = pgTable("employees", {
   status: varchar("status", { length: 20 }).default("active").notNull(), // active, inactive, on_leave, terminated
   address: text("address"),
   emergencyContact: varchar("emergency_contact", { length: 100 }),
+  permissions: text("permissions"), // JSON string or comma-separated
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -405,151 +406,318 @@ export const leaveRequests = pgTable("leave_requests", {
 });
 
 // Zod schemas for validation
-export const insertUserSchema = createInsertSchema(users);
+export const insertUserSchema = createInsertSchema(users).partial({
+  id: true,
+  createdAt: true,
+  isActive: true,
+});
 export const selectUserSchema = createSelectSchema(users);
 export type User = z.infer<typeof selectUserSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
-export const insertUserAddressSchema = createInsertSchema(userAddresses);
+export const insertUserAddressSchema = createInsertSchema(userAddresses).partial({
+  id: true,
+  createdAt: true,
+  isDefault: true,
+});
 export const selectUserAddressSchema = createSelectSchema(userAddresses);
 export type UserAddress = z.infer<typeof selectUserAddressSchema>;
 export type InsertUserAddress = z.infer<typeof insertUserAddressSchema>;
 
-export const insertCategorySchema = createInsertSchema(categories);
+export const insertCategorySchema = createInsertSchema(categories).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  sortOrder: true,
+});
 export const selectCategorySchema = createSelectSchema(categories);
 export type Category = z.infer<typeof selectCategorySchema>;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 
-export const insertRestaurantSchema = createInsertSchema(restaurants);
+export const insertRestaurantSchema = createInsertSchema(restaurants).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  isOpen: true,
+  isFeatured: true,
+  isNew: true,
+  isTemporarilyClosed: true,
+  rating: true,
+  reviewCount: true,
+  minimumOrder: true,
+  deliveryFee: true,
+  perKmFee: true,
+  commissionRate: true,
+  openingTime: true,
+  closingTime: true,
+  workingDays: true,
+});
 export const selectRestaurantSchema = createSelectSchema(restaurants);
 export type Restaurant = z.infer<typeof selectRestaurantSchema>;
 export type InsertRestaurant = z.infer<typeof insertRestaurantSchema>;
 
-export const insertMenuItemSchema = createInsertSchema(menuItems);
+export const insertMenuItemSchema = createInsertSchema(menuItems).partial({
+  id: true,
+  isAvailable: true,
+  isSpecialOffer: true,
+});
 export const selectMenuItemSchema = createSelectSchema(menuItems);
 export type MenuItem = z.infer<typeof selectMenuItemSchema>;
 export type InsertMenuItem = z.infer<typeof insertMenuItemSchema>;
 
-export const insertOrderSchema = createInsertSchema(orders);
+export const insertOrderSchema = createInsertSchema(orders).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true,
+  orderNumber: true,
+  distance: true,
+  driverEarnings: true,
+  restaurantEarnings: true,
+  companyEarnings: true,
+});
 export const selectOrderSchema = createSelectSchema(orders);
 export type Order = z.infer<typeof selectOrderSchema>;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 
-export const insertDriverSchema = createInsertSchema(drivers);
+export const insertDriverSchema = createInsertSchema(drivers).partial({
+  id: true,
+  createdAt: true,
+  isAvailable: true,
+  isActive: true,
+  commissionRate: true,
+  paymentMode: true,
+  salaryAmount: true,
+  earnings: true,
+});
 export const selectDriverSchema = createSelectSchema(drivers);
 export type Driver = z.infer<typeof selectDriverSchema>;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 
-export const insertSpecialOfferSchema = createInsertSchema(specialOffers);
+export const insertSpecialOfferSchema = createInsertSchema(specialOffers).partial({
+  id: true,
+  createdAt: true,
+  isActive: true,
+  minimumOrder: true,
+});
 export const selectSpecialOfferSchema = createSelectSchema(specialOffers);
 export type SpecialOffer = z.infer<typeof selectSpecialOfferSchema>;
 export type InsertSpecialOffer = z.infer<typeof insertSpecialOfferSchema>;
 
-export const insertAdminUserSchema = createInsertSchema(adminUsers);
+export const insertAdminUserSchema = createInsertSchema(adminUsers).partial({
+  id: true,
+  createdAt: true,
+  isActive: true,
+  userType: true,
+});
 export const selectAdminUserSchema = createSelectSchema(adminUsers);
 export type AdminUser = z.infer<typeof selectAdminUserSchema>;
 export type InsertAdminUser = z.infer<typeof insertAdminUserSchema>;
 
-export const insertUiSettingsSchema = createInsertSchema(uiSettings);
+export const insertUiSettingsSchema = createInsertSchema(uiSettings).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  category: true,
+});
 export const selectUiSettingsSchema = createSelectSchema(uiSettings);
 export type UiSettings = z.infer<typeof selectUiSettingsSchema>;
 export type InsertUiSettings = z.infer<typeof insertUiSettingsSchema>;
 
-export const insertRestaurantSectionSchema = createInsertSchema(restaurantSections);
+export const insertRestaurantSectionSchema = createInsertSchema(restaurantSections).partial({
+  id: true,
+  createdAt: true,
+  isActive: true,
+  sortOrder: true,
+});
 export const selectRestaurantSectionSchema = createSelectSchema(restaurantSections);
 export type RestaurantSection = z.infer<typeof selectRestaurantSectionSchema>;
 export type InsertRestaurantSection = z.infer<typeof insertRestaurantSectionSchema>;
 
-export const insertRatingSchema = createInsertSchema(ratings);
+export const insertRatingSchema = createInsertSchema(ratings).partial({
+  id: true,
+  createdAt: true,
+  isApproved: true,
+});
 export const selectRatingSchema = createSelectSchema(ratings);
 export type Rating = z.infer<typeof selectRatingSchema>;
 export type InsertRating = z.infer<typeof insertRatingSchema>;
 
-export const insertNotificationSchema = createInsertSchema(notifications);
+export const insertNotificationSchema = createInsertSchema(notifications).partial({
+  id: true,
+  createdAt: true,
+  isRead: true,
+});
 export const selectNotificationSchema = createSelectSchema(notifications);
 export type Notification = z.infer<typeof selectNotificationSchema>;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
-export const insertWalletSchema = createInsertSchema(wallets);
+export const insertWalletSchema = createInsertSchema(wallets).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  balance: true,
+});
 export const selectWalletSchema = createSelectSchema(wallets);
 export type Wallet = z.infer<typeof selectWalletSchema>;
 export type InsertWallet = z.infer<typeof insertWalletSchema>;
 
-export const insertWalletTransactionSchema = createInsertSchema(walletTransactions);
+export const insertWalletTransactionSchema = createInsertSchema(walletTransactions).partial({
+  id: true,
+  createdAt: true,
+});
 export const selectWalletTransactionSchema = createSelectSchema(walletTransactions);
 export type WalletTransaction = z.infer<typeof selectWalletTransactionSchema>;
 export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;
 
-export const insertSystemSettingsSchema = createInsertSchema(systemSettingsTable);
+export const insertSystemSettingsSchema = createInsertSchema(systemSettingsTable).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+});
 export const selectSystemSettingsSchema = createSelectSchema(systemSettingsTable);
 export type SystemSettings = z.infer<typeof selectSystemSettingsSchema>;
 export type InsertSystemSettings = z.infer<typeof insertSystemSettingsSchema>;
 
-export const insertRestaurantEarningsSchema = createInsertSchema(restaurantEarnings);
+export const insertRestaurantEarningsSchema = createInsertSchema(restaurantEarnings).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  totalEarnings: true,
+  pendingAmount: true,
+  paidAmount: true,
+});
 export const selectRestaurantEarningsSchema = createSelectSchema(restaurantEarnings);
 export type RestaurantEarnings = z.infer<typeof selectRestaurantEarningsSchema>;
 export type InsertRestaurantEarnings = z.infer<typeof insertRestaurantEarningsSchema>;
 
-export const insertCartSchema = createInsertSchema(cart);
+export const insertCartSchema = createInsertSchema(cart).partial({
+  id: true,
+  addedAt: true,
+  quantity: true,
+});
 export const selectCartSchema = createSelectSchema(cart);
 export type Cart = z.infer<typeof selectCartSchema>;
 export type InsertCart = z.infer<typeof insertCartSchema>;
 
-export const insertFavoritesSchema = createInsertSchema(favorites);
+export const insertFavoritesSchema = createInsertSchema(favorites).partial({
+  id: true,
+  addedAt: true,
+});
 export const selectFavoritesSchema = createSelectSchema(favorites);
 export type Favorites = z.infer<typeof selectFavoritesSchema>;
 export type InsertFavorites = z.infer<typeof insertFavoritesSchema>;
 
 // New schemas for Advanced Features
-export const insertDriverReviewSchema = createInsertSchema(driverReviews);
+export const insertDriverReviewSchema = createInsertSchema(driverReviews).partial({
+  id: true,
+  createdAt: true,
+});
 export const selectDriverReviewSchema = createSelectSchema(driverReviews);
 export type DriverReview = z.infer<typeof selectDriverReviewSchema>;
 export type InsertDriverReview = z.infer<typeof insertDriverReviewSchema>;
 
-export const insertDriverEarningsSchema = createInsertSchema(driverEarningsTable);
+export const insertDriverEarningsSchema = createInsertSchema(driverEarningsTable).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  totalEarned: true,
+  withdrawn: true,
+  pending: true,
+});
 export const selectDriverEarningsSchema = createSelectSchema(driverEarningsTable);
 export type DriverEarnings = z.infer<typeof selectDriverEarningsSchema>;
 export type InsertDriverEarnings = z.infer<typeof insertDriverEarningsSchema>;
 
-export const insertDriverWalletSchema = createInsertSchema(driverWallets);
+export const insertDriverWalletSchema = createInsertSchema(driverWallets).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  balance: true,
+});
 export const selectDriverWalletSchema = createSelectSchema(driverWallets);
 export type DriverWallet = z.infer<typeof selectDriverWalletSchema>;
 export type InsertDriverWallet = z.infer<typeof insertDriverWalletSchema>;
 
-export const insertRestaurantWalletSchema = createInsertSchema(restaurantWallets);
+export const insertRestaurantWalletSchema = createInsertSchema(restaurantWallets).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+  balance: true,
+});
 export const selectRestaurantWalletSchema = createSelectSchema(restaurantWallets);
 export type RestaurantWallet = z.infer<typeof selectRestaurantWalletSchema>;
 export type InsertRestaurantWallet = z.infer<typeof insertRestaurantWalletSchema>;
 
-export const insertCommissionSettingsSchema = createInsertSchema(commissionSettings);
+export const insertCommissionSettingsSchema = createInsertSchema(commissionSettings).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+});
 export const selectCommissionSettingsSchema = createSelectSchema(commissionSettings);
 export type CommissionSettings = z.infer<typeof selectCommissionSettingsSchema>;
 export type InsertCommissionSettings = z.infer<typeof insertCommissionSettingsSchema>;
 
-export const insertWithdrawalRequestSchema = createInsertSchema(withdrawalRequests);
+export const insertWithdrawalRequestSchema = createInsertSchema(withdrawalRequests).partial({
+  id: true,
+  submittedAt: true,
+  updatedAt: true,
+  status: true,
+});
 export const selectWithdrawalRequestSchema = createSelectSchema(withdrawalRequests);
 export type WithdrawalRequest = z.infer<typeof selectWithdrawalRequestSchema>;
 export type InsertWithdrawalRequest = z.infer<typeof insertWithdrawalRequestSchema>;
 
-export const insertDriverWorkSessionSchema = createInsertSchema(driverWorkSessions);
+export const insertDriverWorkSessionSchema = createInsertSchema(driverWorkSessions).partial({
+  id: true,
+  startTime: true,
+  isActive: true,
+  totalDeliveries: true,
+  totalEarnings: true,
+  createdAt: true,
+});
 export const selectDriverWorkSessionSchema = createSelectSchema(driverWorkSessions);
 export type DriverWorkSession = z.infer<typeof selectDriverWorkSessionSchema>;
 export type InsertDriverWorkSession = z.infer<typeof insertDriverWorkSessionSchema>;
 
-export const insertEmployeeSchema = createInsertSchema(employees);
+export const insertEmployeeSchema = createInsertSchema(employees).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  hireDate: true,
+  status: true,
+  permissions: true,
+});
 export const selectEmployeeSchema = createSelectSchema(employees);
 export type Employee = z.infer<typeof selectEmployeeSchema>;
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 
-export const insertAttendanceSchema = createInsertSchema(attendance);
+export const insertAttendanceSchema = createInsertSchema(attendance).partial({
+  id: true,
+  date: true,
+});
 export const selectAttendanceSchema = createSelectSchema(attendance);
 export type Attendance = z.infer<typeof selectAttendanceSchema>;
 export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
 
-export const insertLeaveRequestSchema = createInsertSchema(leaveRequests);
+export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).partial({
+  id: true,
+  status: true,
+  submittedAt: true,
+});
 export const selectLeaveRequestSchema = createSelectSchema(leaveRequests);
 export type LeaveRequest = z.infer<typeof selectLeaveRequestSchema>;
 export type InsertLeaveRequest = z.infer<typeof insertLeaveRequestSchema>;
+
 
 // Delivery fee settings table
 export const deliveryFeeSettings = pgTable("delivery_fee_settings", {

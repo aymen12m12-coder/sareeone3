@@ -277,14 +277,14 @@ router.put("/:id/assign-driver", async (req, res) => {
       driverId,
       driverEarnings: String(driverEarnings),
       companyEarnings: String(companyEarnings),
-      status: 'on_way', // تغيير الحالة إلى "في الطريق" عند التعيين
+      status: 'confirmed', // إبقاء الحالة "مؤكد" عند التعيين ليقوم السائق بتحديثها
       updatedAt: new Date()
     });
 
     // Broadcast update via WebSocket
     const ws = req.app.get('ws');
     if (ws) {
-      ws.broadcast('order_update', { orderId: id, status: 'on_way' });
+      ws.broadcast('order_update', { orderId: id, status: 'confirmed' });
     }
 
     // تحديث حالة السائق إلى مشغول

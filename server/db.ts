@@ -5,7 +5,7 @@ import {
   adminUsers, categories, restaurantSections, restaurants, 
   menuItems, users, customers, userAddresses, orders, specialOffers, 
   notifications, ratings, systemSettingsTable as systemSettings, drivers, orderTracking,
-  cart, favorites,
+  cart, favorites, employees, attendance, leaveRequests,
   type AdminUser, type InsertAdminUser,
   type Category, type InsertCategory,
   type Restaurant, type InsertRestaurant,
@@ -20,7 +20,10 @@ import {
   type SystemSettings, type InsertSystemSettings,
   type Driver, type InsertDriver,
   type Cart, type InsertCart,
-  type Favorites, type InsertFavorites
+  type Favorites, type InsertFavorites,
+  type Employee, type InsertEmployee,
+  type Attendance, type InsertAttendance,
+  type LeaveRequest, type InsertLeaveRequest
 } from "@shared/schema";
 import { IStorage } from "./storage";
 import { eq, and, desc, sql, or, like, asc, inArray } from "drizzle-orm";
@@ -61,7 +64,10 @@ function getDb() {
       drivers,
       orderTracking,
       cart,
-      favorites
+      favorites,
+      employees,
+      attendance,
+      leaveRequests
     };
     
     db = drizzle(sqlClient, { schema });
@@ -1271,6 +1277,111 @@ async getNotifications(recipientType?: string, recipientId?: string, unread?: bo
       query = query.where(eq(financialReports.periodType, type));
     }
     return await query.orderBy(desc(financialReports.startDate));
+  }
+
+  // HR Management
+  async getEmployees(): Promise<Employee[]> {
+    try {
+      const result = await this.db.select().from(employees).orderBy(asc(employees.name));
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+      return [];
+    }
+  }
+
+  async getEmployee(id: string): Promise<Employee | undefined> {
+    const [employee] = await this.db.select().from(employees).where(eq(employees.id, id));
+    return employee;
+  }
+
+  async createEmployee(employee: InsertEmployee): Promise<Employee> {
+    const [newEmployee] = await this.db.insert(employees).values(employee).returning();
+    return newEmployee;
+  }
+
+  async updateEmployee(id: string, employee: Partial<InsertEmployee>): Promise<Employee | undefined> {
+    const [updated] = await this.db.update(employees)
+      .set({ ...employee, updatedAt: new Date() })
+      .where(eq(employees.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    const result = await this.db.delete(employees).where(eq(employees.id, id));
+    return result.rowCount > 0;
+  }
+
+  async getAttendance(employeeId?: string, date?: Date): Promise<Attendance[]> {
+    try {
+      let query = this.db.select().from(attendance);
+      const conditions = [];
+      
+      if (employeeId) {
+        conditions.push(eq(attendance.employeeId, employeeId));
+      }
+      
+      if (date) {
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+        conditions.push(sql`${attendance.date} >= ${startOfDay} AND ${attendance.date} <= ${endOfDay}`);
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
+      }
+      
+      const result = await query.orderBy(desc(attendance.date));
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+      return [];
+    }
+  }
+
+  async createAttendance(att: InsertAttendance): Promise<Attendance> {
+    const [newAttendance] = await this.db.insert(attendance).values(att).returning();
+    return newAttendance;
+  }
+
+  async updateAttendance(id: string, att: Partial<InsertAttendance>): Promise<Attendance | undefined> {
+    const [updated] = await this.db.update(attendance)
+      .set(att)
+      .where(eq(attendance.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getLeaveRequests(employeeId?: string): Promise<LeaveRequest[]> {
+    try {
+      let query = this.db.select().from(leaveRequests);
+      
+      if (employeeId) {
+        query = query.where(eq(leaveRequests.employeeId, employeeId));
+      }
+      
+      const result = await query.orderBy(desc(leaveRequests.submittedAt));
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching leave requests:', error);
+      return [];
+    }
+  }
+
+  async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
+    const [newRequest] = await this.db.insert(leaveRequests).values(request).returning();
+    return newRequest;
+  }
+
+  async updateLeaveRequest(id: string, request: Partial<InsertLeaveRequest>): Promise<LeaveRequest | undefined> {
+    const [updated] = await this.db.update(leaveRequests)
+      .set(request)
+      .where(eq(leaveRequests.id, id))
+      .returning();
+    return updated;
   }
 }
 
