@@ -14,7 +14,8 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
+// في schema.ts، أضف هذا التصدير إذا كان مفقوداً
+export { driverEarningsTable };
 // Customers table (alias for users)
 export const customers = users;
 
