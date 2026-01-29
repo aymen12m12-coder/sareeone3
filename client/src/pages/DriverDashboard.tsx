@@ -6,7 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { 
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription 
+} from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Truck, MapPin, Clock, DollarSign, LogOut, Navigation, Phone, 
@@ -26,7 +28,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
   const [driverStatus, setDriverStatus] = useState<'available' | 'busy' | 'offline'>('offline');
   const [currentDriver, setCurrentDriver] = useState<Driver | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showOrderDetailsDialog, setShowOrderDetailsDialog] = useState(false);
+  const [showOrderDetailsSheet, setShowOrderDetailsSheet] = useState(false);
 
   // الحصول على معرف السائق
   const getDriverId = () => {
@@ -340,7 +342,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
     return `${num.toFixed(2)} ريال`;
   };
 
-  // 🔄 تصنيف الطلبات - الإصاح المعدل
+  // 🔄 تصنيف الطلبات - الإصلاح المعدل
   const categorizeOrders = () => {
     const available = availableOrders || [];
     const my = myOrders || [];
@@ -350,7 +352,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
         order.status === 'confirmed' && !order.driverId
       ),
       accepted: my.filter(order => 
-        ['preparing', 'ready'].includes(order.status || '')
+        ['confirmed', 'preparing', 'ready'].includes(order.status || '')
       ),
       inProgress: my.filter(order => 
         ['picked_up', 'on_way'].includes(order.status || '')
@@ -423,7 +425,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
                   variant="outline"
                   onClick={() => {
                     setSelectedOrder(order);
-                    setShowOrderDetailsDialog(true);
+                    setShowOrderDetailsSheet(true);
                   }}
                   className="gap-2"
                 >
@@ -783,19 +785,144 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
       </div>
 
       {/* نافذة تفاصيل الطلب */}
-      <Dialog open={showOrderDetailsDialog} onOpenChange={setShowOrderDetailsDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>تفاصيل الطلب</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showOrderDetailsSheet} onOpenChange={setShowOrderDetailsSheet}>
+        <SheetContent side="bottom" className="h-[90vh] sm:h-[80vh] overflow-y-auto rounded-t-xl px-4">
+          <SheetHeader className="text-right pb-4 border-b">
+            <SheetTitle className="text-xl">تفاصيل الطلب #{selectedOrder?.orderNumber || selectedOrder?.id.slice(-8)}</SheetTitle>
+            <SheetDescription>
+              عرض تفاصيل المنتجات والموقع للطلب
+            </SheetDescription>
+          </SheetHeader>
           
           {selectedOrder && (
-            <div className="space-y-4">
-              <OrderCard order={selectedOrder} type="available" />
+            <div className="py-6 space-y-6">
+              {/* معلومات المطعم والعميل */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <h3 className="font-bold text-sm text-muted-foreground uppercase">معلومات الاستلام</h3>
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <Store className="h-5 w-5 text-blue-500" />
+                    <div>
+                      <p className="font-bold">{selectedOrder.restaurantName || 'المطعم'}</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrder.restaurantPhone || 'لا يوجد هاتف'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="font-bold text-sm text-muted-foreground uppercase">معلومات التسليم</h3>
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <User className="h-5 w-5 text-green-500" />
+                    <div>
+                      <p className="font-bold">{selectedOrder.customerName}</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrder.customerPhone}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* العنوان */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-sm text-muted-foreground uppercase">عنوان التوصيل</h3>
+                <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
+                  <MapPin className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <p className="text-sm leading-relaxed">{selectedOrder.deliveryAddress}</p>
+                </div>
+              </div>
+
+              {/* المنتجات */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-sm text-muted-foreground uppercase">المنتجات ({getOrderItems(selectedOrder.items).length})</h3>
+                <div className="border rounded-lg divide-y bg-white">
+                  {getOrderItems(selectedOrder.items).map((item: any, index: number) => (
+                    <div key={index} className="p-3 flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-sm font-bold">
+                          {item.quantity}x
+                        </span>
+                        <span className="text-sm font-medium">{item.name}</span>
+                      </div>
+                      <span className="text-sm font-bold">{formatCurrency(parseFloat(item.price) * item.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* الملاحظات */}
+              {selectedOrder.notes && (
+                <div className="space-y-3">
+                  <h3 className="font-bold text-sm text-muted-foreground uppercase">ملاحظات إضافية</h3>
+                  <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-lg text-sm text-yellow-800 flex gap-2">
+                    <MessageCircle className="h-4 w-4 mt-0.5" />
+                    {selectedOrder.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* الملخص المالي */}
+              <div className="bg-gray-900 text-white p-4 rounded-xl space-y-3">
+                <div className="flex justify-between text-sm opacity-80">
+                  <span>قيمة الطلب</span>
+                  <span>{formatCurrency(selectedOrder.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm opacity-80">
+                  <span>رسوم التوصيل</span>
+                  <span>{formatCurrency(selectedOrder.deliveryFee)}</span>
+                </div>
+                <div className="pt-2 border-t border-white/20 flex justify-between font-bold text-lg">
+                  <span>الإجمالي المطلوب</span>
+                  <span className="text-green-400">{formatCurrency(selectedOrder.totalAmount)}</span>
+                </div>
+                <div className="pt-1 flex justify-between text-xs text-blue-300 italic">
+                  <span>عمولتك المتوقعة (صافي)</span>
+                  <span>{formatCurrency(selectedOrder.driverEarnings)}</span>
+                </div>
+              </div>
+              
+              <div className="pb-8">
+                {selectedOrder.status === 'confirmed' && !selectedOrder.driverId && (
+                  <Button 
+                    className="w-full py-6 text-lg bg-green-600 hover:bg-green-700 font-bold shadow-lg"
+                    onClick={() => {
+                      acceptOrderMutation.mutate(selectedOrder.id);
+                      setShowOrderDetailsSheet(false);
+                    }}
+                    disabled={acceptOrderMutation.isPending}
+                  >
+                    قبول وتوصيل الطلب الآن
+                  </Button>
+                )}
+                
+                {['confirmed', 'preparing', 'ready', 'picked_up', 'on_way'].includes(selectedOrder.status || '') && selectedOrder.driverId === driverId && (
+                  <div className="flex gap-3">
+                    <Button 
+                      variant="outline" 
+                      className="flex-1 py-6 h-auto"
+                      onClick={() => window.open(`tel:${selectedOrder.customerPhone}`)}
+                    >
+                      <Phone className="h-5 w-5 ml-2" />
+                      اتصال بالعميل
+                    </Button>
+                    <Button 
+                      className="flex-[2] py-6 h-auto text-lg bg-blue-600 hover:bg-blue-700 font-bold"
+                      onClick={() => {
+                        updateOrderStatusMutation.mutate({ 
+                          orderId: selectedOrder.id, 
+                          status: getNextStatus(selectedOrder.status || '') 
+                        });
+                        setShowOrderDetailsSheet(false);
+                      }}
+                      disabled={updateOrderStatusMutation.isPending}
+                    >
+                      {getNextStatusLabel(selectedOrder.status || '')}
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

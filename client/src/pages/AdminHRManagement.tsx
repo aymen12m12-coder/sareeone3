@@ -75,6 +75,8 @@ export default function AdminHRManagement() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [showEmployeeDialog, setShowEmployeeDialog] = useState(false);
   const [activeTab, setActiveTab] = useState('employees');
+  const [showAttendanceDialog, setShowAttendanceDialog] = useState(false);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   
   const [employeeForm, setEmployeeForm] = useState({
     name: '',
@@ -87,6 +89,21 @@ export default function AdminHRManagement() {
     address: '',
     emergencyContact: '',
     permissions: ['view_dashboard', 'manage_orders']
+  });
+
+  const [attendanceForm, setAttendanceForm] = useState({
+    employeeId: '',
+    status: 'present' as Attendance['status'],
+    notes: '',
+    date: new Date()
+  });
+
+  const [leaveForm, setLeaveForm] = useState({
+    employeeId: '',
+    type: 'annual' as LeaveRequest['type'],
+    startDate: new Date(),
+    endDate: new Date(),
+    reason: ''
   });
 
   // جلب الموظفين
@@ -115,6 +132,44 @@ export default function AdminHRManagement() {
       toast({ title: 'تم إضافة الموظف بنجاح' });
       setShowEmployeeDialog(false);
       resetEmployeeForm();
+    },
+  });
+
+  // تسجيل حضور
+  const addAttendanceMutation = useMutation({
+    mutationFn: async (data: typeof attendanceForm) => {
+      const response = await apiRequest('POST', '/api/admin/attendance', data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/attendance'] });
+      toast({ title: 'تم تسجيل الحضور بنجاح' });
+      setShowAttendanceDialog(false);
+    },
+  });
+
+  // طلب إجازة
+  const addLeaveMutation = useMutation({
+    mutationFn: async (data: typeof leaveForm) => {
+      const response = await apiRequest('POST', '/api/admin/leave-requests', data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/leave-requests'] });
+      toast({ title: 'تم إرسال طلب الإجازة بنجاح' });
+      setShowLeaveDialog(false);
+    },
+  });
+
+  // تحديث حالة طلب إجازة
+  const updateLeaveStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string, status: string }) => {
+      const response = await apiRequest('PUT', `/api/admin/leave-requests/${id}`, { status });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/leave-requests'] });
+      toast({ title: 'تم تحديث حالة الطلب بنجاح' });
     },
   });
 
@@ -228,22 +283,158 @@ export default function AdminHRManagement() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={employee.status === 'active' ? 'default' : 'secondary'}>
-                          {employee.status === 'active' ? 'نشط' : 'غير نشط'}
+                          {employee.status === 'active' ? 'نشط' : employee.status === 'on_leave' ? 'في إجازة' : 'غير نشط'}
                         </Badge>
                       </TableCell>
-                      <TableCell>{employee.hireDate}</TableCell>
+                      <TableCell>{new Date(employee.hireDate).toLocaleDateString('ar-YE')}</TableCell>
                       <TableCell>{employee.salary} ر.ي</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Button variant="ghost" size="icon"><Eye className="w-4 h-4" /></Button>
                           <Button variant="ghost" size="icon"><Edit className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" className="text-destructive"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="attendance">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>سجل الحضور والإنصراف</CardTitle>
+                <CardDescription>تتبع حضور وانصراف الموظفين يومياً</CardDescription>
+              </div>
+              <Button onClick={() => setShowAttendanceDialog(true)} variant="outline" className="gap-2">
+                <Clock className="w-4 h-4" />
+                تسجيل حضور يدوي
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>الموظف</TableHead>
+                    <TableHead>التاريخ</TableHead>
+                    <TableHead>وقت الحضور</TableHead>
+                    <TableHead>وقت الإنصراف</TableHead>
+                    <TableHead>الحالة</TableHead>
+                    <TableHead>ساعات العمل</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attendanceRecords?.map((record) => {
+                    const employee = employees?.find(e => e.id === record.employeeId);
+                    return (
+                      <TableRow key={record.id}>
+                        <TableCell className="font-medium">{employee?.name || 'موظف سابق'}</TableCell>
+                        <TableCell>{new Date(record.date).toLocaleDateString('ar-YE')}</TableCell>
+                        <TableCell>{record.checkIn ? new Date(record.checkIn).toLocaleTimeString('ar-YE') : '-'}</TableCell>
+                        <TableCell>{record.checkOut ? new Date(record.checkOut).toLocaleTimeString('ar-YE') : '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={record.status === 'present' ? 'default' : 'destructive'}>
+                            {record.status === 'present' ? 'حاضر' : record.status === 'absent' ? 'غائب' : 'متأخر'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{record.hoursWorked || 0} ساعة</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="leave">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>طلبات الإجازة</CardTitle>
+                <CardDescription>مراجعة والموافقة على طلبات إجازات الموظفين</CardDescription>
+              </div>
+              <Button onClick={() => setShowLeaveDialog(true)} variant="outline" className="gap-2">
+                <Calendar className="w-4 h-4" />
+                تقديم طلب إجازة
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>الموظف</TableHead>
+                    <TableHead>نوع الإجازة</TableHead>
+                    <TableHead>من</TableHead>
+                    <TableHead>إلى</TableHead>
+                    <TableHead>السبب</TableHead>
+                    <TableHead>الحالة</TableHead>
+                    <TableHead className="text-left">إجراءات</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leaveRequests?.map((request) => {
+                    const employee = employees?.find(e => e.id === request.employeeId);
+                    return (
+                      <TableRow key={request.id}>
+                        <TableCell className="font-medium">{employee?.name || 'موظف سابق'}</TableCell>
+                        <TableCell>
+                          {request.type === 'annual' ? 'سنوية' : request.type === 'sick' ? 'مرضية' : 'طارئة'}
+                        </TableCell>
+                        <TableCell>{new Date(request.startDate).toLocaleDateString('ar-YE')}</TableCell>
+                        <TableCell>{new Date(request.endDate).toLocaleDateString('ar-YE')}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{request.reason}</TableCell>
+                        <TableCell>
+                          <Badge variant={request.status === 'approved' ? 'default' : request.status === 'pending' ? 'outline' : 'destructive'}>
+                            {request.status === 'approved' ? 'مقبولة' : request.status === 'pending' ? 'قيد الانتظار' : 'مرفوضة'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {request.status === 'pending' && (
+                            <div className="flex gap-2">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="text-green-600 hover:text-green-700"
+                                onClick={() => updateLeaveStatusMutation.mutate({ id: request.id, status: 'approved' })}
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="text-destructive"
+                                onClick={() => updateLeaveStatusMutation.mutate({ id: request.id, status: 'rejected' })}
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payroll">
+          <Card>
+            <CardHeader>
+              <CardTitle>مسير الرواتب</CardTitle>
+              <CardDescription>إدارة المستحقات والرواتب الشهرية للموظفين</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-12 text-muted-foreground">
+                <BanknoteIcon className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>نظام الرواتب قيد التطوير</p>
+                <p className="text-sm">سيتم توفير تقارير الرواتب والمدفوعات قريباً</p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -315,6 +506,105 @@ export default function AdminHRManagement() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEmployeeDialog(false)}>إلغاء</Button>
             <Button onClick={() => addEmployeeMutation.mutate(employeeForm)}>إضافة الموظف</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAttendanceDialog} onOpenChange={setShowAttendanceDialog}>
+        <DialogContent className="rtl">
+          <DialogHeader>
+            <DialogTitle>تسجيل حضور يدوي</DialogTitle>
+            <CardDescription>تسجيل حالة حضور موظف لتاريخ محدد</CardDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>الموظف</Label>
+              <Select value={attendanceForm.employeeId} onValueChange={(v) => setAttendanceForm({...attendanceForm, employeeId: v})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الموظف" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees?.map(emp => (
+                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>الحالة</Label>
+              <Select value={attendanceForm.status} onValueChange={(v: Attendance['status']) => setAttendanceForm({...attendanceForm, status: v})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="present">حاضر</SelectItem>
+                  <SelectItem value="absent">غائب</SelectItem>
+                  <SelectItem value="late">متأخر</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>ملاحظات</Label>
+              <Textarea 
+                value={attendanceForm.notes}
+                onChange={(e) => setAttendanceForm({...attendanceForm, notes: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAttendanceDialog(false)}>إلغاء</Button>
+            <Button onClick={() => addAttendanceMutation.mutate(attendanceForm)}>تسجيل</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+        <DialogContent className="rtl">
+          <DialogHeader>
+            <DialogTitle>تقديم طلب إجازة</DialogTitle>
+            <CardDescription>إضافة طلب إجازة جديد للموظف</CardDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>الموظف</Label>
+              <Select value={leaveForm.employeeId} onValueChange={(v) => setLeaveForm({...leaveForm, employeeId: v})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الموظف" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees?.map(emp => (
+                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>من تاريخ</Label>
+                <DatePicker 
+                  date={leaveForm.startDate}
+                  setDate={(d) => setLeaveForm({...leaveForm, startDate: d || new Date()})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>إلى تاريخ</Label>
+                <DatePicker 
+                  date={leaveForm.endDate}
+                  setDate={(d) => setLeaveForm({...leaveForm, endDate: d || new Date()})}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>السبب</Label>
+              <Textarea 
+                value={leaveForm.reason}
+                onChange={(e) => setLeaveForm({...leaveForm, reason: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLeaveDialog(false)}>إلغاء</Button>
+            <Button onClick={() => addLeaveMutation.mutate(leaveForm)}>تقديم الطلب</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
