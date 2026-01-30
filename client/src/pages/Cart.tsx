@@ -58,7 +58,7 @@ export default function Cart() {
     // Calculate delivery fee using backend service
     if (restaurantId) {
       try {
-        const response = await apiRequest('POST', '/api/delivery/calculate', {
+        const response = await apiRequest('POST', '/api/delivery-fees/calculate', {
           customerLat: location.lat,
           customerLng: location.lng,
           restaurantId: restaurantId,

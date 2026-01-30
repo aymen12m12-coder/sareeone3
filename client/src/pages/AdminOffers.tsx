@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Percent, Save, X, Calendar, DollarSign } from 'lucide-react';
+import { Plus, Edit, Trash2, Percent, Save, X, Calendar, DollarSign, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import type { SpecialOffer } from '@shared/schema';
+import type { SpecialOffer, Restaurant } from '@shared/schema';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function AdminOffers() {
   const { toast } = useToast();
@@ -29,11 +36,18 @@ export default function AdminOffers() {
     minimumOrder: '0',
     validUntil: '',
     isActive: true,
+    restaurantId: '',
   });
 
   const { data: offers, isLoading } = useQuery<SpecialOffer[]>({
     queryKey: ['/api/admin/special-offers'],
   });
+
+  const { data: restaurantsResponse } = useQuery<{ restaurants: Restaurant[] }>({
+    queryKey: ['/api/admin/restaurants'],
+  });
+
+  const restaurants = restaurantsResponse?.restaurants || [];
 
   const createOfferMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -43,6 +57,7 @@ export default function AdminOffers() {
         discountAmount: data.discountAmount ? parseFloat(data.discountAmount) : null,
         minimumOrder: parseFloat(data.minimumOrder),
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
+        restaurantId: data.restaurantId || null,
       };
       const response = await apiRequest('POST', '/api/admin/special-offers', submitData);
       return response.json();
@@ -66,6 +81,7 @@ export default function AdminOffers() {
         discountAmount: data.discountAmount ? parseFloat(data.discountAmount) : null,
         minimumOrder: parseFloat(data.minimumOrder),
         validUntil: data.validUntil ? new Date(data.validUntil) : null,
+        restaurantId: data.restaurantId || null,
       };
       const response = await apiRequest('PUT', `/api/admin/special-offers/${id}`, submitData);
       return response.json();
@@ -106,6 +122,7 @@ export default function AdminOffers() {
       minimumOrder: '0',
       validUntil: '',
       isActive: true,
+      restaurantId: '',
     });
     setEditingOffer(null);
   };
@@ -121,6 +138,7 @@ export default function AdminOffers() {
       minimumOrder: offer.minimumOrder || '0',
       validUntil: offer.validUntil ? new Date(offer.validUntil).toISOString().slice(0, 16) : '',
       isActive: offer.isActive,
+      restaurantId: offer.restaurantId || '',
     });
     setIsDialogOpen(true);
   };
@@ -223,6 +241,26 @@ export default function AdminOffers() {
                   required
                   data-testid="input-offer-description"
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="restaurantId">المطعم المرتبط (اختياري)</Label>
+                <Select
+                  value={formData.restaurantId || "none"}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, restaurantId: value === "none" ? "" : value }))}
+                >
+                  <SelectTrigger id="restaurantId">
+                    <SelectValue placeholder="اختر مطعماً" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">عرض عام (لكل المطاعم)</SelectItem>
+                    {restaurants.map((restaurant) => (
+                      <SelectItem key={restaurant.id} value={restaurant.id}>
+                        {restaurant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
