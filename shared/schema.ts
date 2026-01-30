@@ -145,6 +145,7 @@ export const specialOffers = pgTable("special_offers", {
   discountPercent: integer("discount_percent"),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   minimumOrder: decimal("minimum_order", { precision: 10, scale: 2 }).default("0"),
+  restaurantId: uuid("restaurant_id").references(() => restaurants.id), // ربط العرض بمطعم محدد
   validUntil: timestamp("valid_until"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

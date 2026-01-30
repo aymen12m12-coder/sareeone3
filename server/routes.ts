@@ -254,7 +254,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const driver = await storage.createDriver(validatedData);
       res.status(201).json(driver);
     } catch (error) {
-      res.status(400).json({ message: "Invalid driver data" });
+      console.error("خطأ في إضافة سائق:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "بيانات السائق غير صحيحة", 
+          details: error.errors 
+        });
+      }
+      res.status(400).json({ 
+        message: error instanceof Error ? error.message : "حدث خطأ أثناء إضافة السائق" 
+      });
     }
   });
 
@@ -1026,7 +1035,7 @@ app.get("/api/notifications", async (req, res) => {
   app.use("/api/orders", ordersRoutes);
 
   // Register delivery fee routes
-  app.use("/api/delivery", deliveryFeeRoutes);
+  app.use("/api/delivery-fees", deliveryFeeRoutes);
 
   // Enhanced notifications endpoint
   app.get("/api/notifications", async (req, res) => {

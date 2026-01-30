@@ -98,7 +98,7 @@ function coerceRequestData(data: any) {
   });
   
   // Convert optional text/UUID fields to undefined instead of null
-  ['categoryId', 'temporaryCloseReason', 'address'].forEach(field => {
+  ['categoryId', 'temporaryCloseReason', 'address', 'restaurantId'].forEach(field => {
     if (coerced[field] === null || coerced[field] === '') {
       coerced[field] = undefined;
     }
@@ -1009,6 +1009,8 @@ router.post("/special-offers", async (req, res) => {
       
       // حالة العرض (الآن مع تحويل صحيح للبوليان)
       isActive: coercedData.isActive !== undefined ? coercedData.isActive : true,
+      
+      restaurantId: coercedData.restaurantId,
       
       // حقول التوقيت
       createdAt: new Date()

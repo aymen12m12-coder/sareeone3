@@ -376,8 +376,43 @@ export class DatabaseStorage {
   }
 
   async createDriver(driver: InsertDriver): Promise<Driver> {
-    const [newDriver] = await this.db.insert(drivers).values(driver).returning();
-    return newDriver;
+    try {
+      // 1. إضافة السائق
+      const [newDriver] = await this.db.insert(drivers).values(driver).returning();
+      
+      if (!newDriver) {
+        throw new Error("فشل في إنشاء السائق");
+      }
+
+      // 2. إنشاء محفظة للسائق
+      try {
+        await this.db.insert(driverWallets).values({
+          driverId: newDriver.id,
+          balance: "0",
+          isActive: true
+        });
+      } catch (walletError) {
+        console.error("خطأ في إنشاء محفظة السائق:", walletError);
+        // لا نفشل العملية كاملة إذا فشل إنشاء المحفظة، لكن يفضل تسجيل الخطأ
+      }
+
+      // 3. إنشاء سجل أرباح للسائق
+      try {
+        await this.db.insert(driverEarningsTable).values({
+          driverId: newDriver.id,
+          totalEarned: "0",
+          withdrawn: "0",
+          pending: "0"
+        });
+      } catch (earningsError) {
+        console.error("خطأ في إنشاء سجل أرباح السائق:", earningsError);
+      }
+
+      return newDriver;
+    } catch (error) {
+      console.error("Error in createDriver:", error);
+      throw error;
+    }
   }
 
   async updateDriver(id: string, driver: Partial<InsertDriver>): Promise<Driver | undefined> {
