@@ -1,10 +1,10 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { 
-  driverReviews, driverEarnings, driverWallets, restaurantWallets,
+  driverReviews, driverEarningsTable, driverWallets, restaurantWallets,
   commissionSettings, withdrawalRequests, driverWorkSessions,
   drivers, orders, users,
   type DriverReview, type InsertDriverReview,
-  type driverEarnings, type InsertDriverEarnings,
+  type DriverEarnings, type InsertDriverEarnings,
   type DriverWallet, type InsertDriverWallet,
   type RestaurantWallet, type InsertRestaurantWallet,
   type CommissionSettings, type InsertCommissionSettings,
@@ -41,16 +41,16 @@ export class AdvancedDatabaseStorage {
 
   // Driver Earnings
   async updateDriverEarnings(driverId: string, earnings: Partial<InsertDriverEarnings>): Promise<DriverEarnings> {
-    const result = await this.db.update(driverEarnings)
+    const result = await this.db.update(driverEarningsTable)
       .set(earnings)
-      .where(eq(driverEarnings.driverId, driverId))
+      .where(eq(driverEarningsTable.driverId, driverId))
       .returning();
     return result[0];
   }
 
   async getDriverEarnings(driverId: string): Promise<DriverEarnings | null> {
-    const result = await this.db.select().from(driverEarnings)
-      .where(eq(driverEarnings.driverId, driverId));
+    const result = await this.db.select().from(driverEarningsTable)
+      .where(eq(driverEarningsTable.driverId, driverId));
     return result[0] || null;
   }
 
