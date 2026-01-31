@@ -131,18 +131,18 @@ export default function AdminFinancialReports() {
 
   // جلب طلبات السحب المعلقة
   const { data: withdrawalRequestsData } = useQuery<WithdrawalRequest[]>({
-    queryKey: ['/api/admin/withdrawals/pending'],
+    queryKey: ['/api/admin/withdrawal-requests/pending'],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/admin/withdrawals/pending');
+      const response = await apiRequest('GET', '/api/admin/withdrawal-requests/pending');
       return response.json();
     }
   });
 
   const handleApproveWithdrawal = async (id: string) => {
     try {
-      await apiRequest('POST', `/api/admin/withdrawals/${id}/approve`, {});
+      await apiRequest('POST', `/api/admin/withdrawal-requests/${id}/approve`, {});
       toast({ title: 'تمت الموافقة على طلب السحب بنجاح' });
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawals/pending'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawal-requests/pending'] });
     } catch (error) {
       toast({ title: 'فشل في الموافقة على طلب السحب', variant: 'destructive' });
     }
@@ -150,9 +150,9 @@ export default function AdminFinancialReports() {
 
   const handleRejectWithdrawal = async (id: string) => {
     try {
-      await apiRequest('POST', `/api/admin/withdrawals/${id}/reject`, { reason: 'تم الرفض من قبل المسؤول' });
+      await apiRequest('POST', `/api/admin/withdrawal-requests/${id}/reject`, { reason: 'تم الرفض من قبل المسؤول' });
       toast({ title: 'تم رفض طلب السحب' });
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawals/pending'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawal-requests/pending'] });
     } catch (error) {
       toast({ title: 'فشل في رفض طلب السحب', variant: 'destructive' });
     }
@@ -172,6 +172,8 @@ export default function AdminFinancialReports() {
     { name: 'بقالات', value: 300 },
     { name: 'صيدليات', value: 200 },
   ];
+
+  const latestReport = financialReports?.[0];
 
   return (
     <div className="p-6 space-y-6 bg-gray-50/50 min-h-screen rtl">
@@ -199,10 +201,10 @@ export default function AdminFinancialReports() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,234,567 ر.ي</div>
+            <div className="text-2xl font-bold">{latestReport?.totalRevenue.toLocaleString() || 0} ر.ي</div>
             <p className="text-xs text-green-500 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
-              +12.5% من الشهر الماضي
+              +{latestReport?.growthRate || 0}% من الفترة الماضية
             </p>
           </CardContent>
         </Card>
@@ -212,7 +214,7 @@ export default function AdminFinancialReports() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">245,890 ر.ي</div>
+            <div className="text-2xl font-bold">{latestReport?.netProfit.toLocaleString() || 0} ر.ي</div>
             <p className="text-xs text-green-500 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
               +8.2% من الشهر الماضي
@@ -225,7 +227,7 @@ export default function AdminFinancialReports() {
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">123,450 ر.ي</div>
+            <div className="text-2xl font-bold">{latestReport?.commissionEarned.toLocaleString() || 0} ر.ي</div>
             <p className="text-xs text-green-500 flex items-center gap-1 mt-1">
               <TrendingUp className="w-3 h-3" />
               +5.4% من الشهر الماضي

@@ -106,12 +106,13 @@ export default function AdminDriversAdvanced() {
 
   // 💰 معالجة طلبات السحب
   const processWithdrawal = useMutation({
-    mutationFn: async ({ requestId, action }: { requestId: string; action: 'approve' | 'reject' }) => {
-      const response = await apiRequest('POST', `/api/admin/withdrawals/${requestId}/${action}`);
+    mutationFn: async ({ requestId, action, reason }: { requestId: string; action: 'approve' | 'reject', reason?: string }) => {
+      const response = await apiRequest('POST', `/api/admin/withdrawal-requests/${requestId}/${action}`, { reason });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/drivers/stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/withdrawal-requests/pending'] });
       toast({
         title: "تمت المعالجة",
         description: "تمت معالجة طلب السحب بنجاح",
