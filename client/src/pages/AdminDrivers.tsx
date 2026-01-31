@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Truck, Save, X, Phone, MapPin, DollarSign, User, Wallet, History, CreditCard, ArrowUpDown, Receipt, Coins, Award, TrendingUp, ChevronUp, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit, Trash2, Truck, Save, X, Phone, MapPin, DollarSign, User, Wallet, History, CreditCard, ArrowUpDown, Receipt, Coins, Award, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,69 +12,102 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Driver, DriverTransaction, DriverBalance, DriverCommission } from '@shared/schema';
 
+// تعريف الأنواع المتوقعة من API
+interface DriverResponse extends Driver {
+  totalEarnings?: string | number;
+  commissionRate?: string | number;
+}
+
+interface DriverFormData {
+  name: string;
+  phone: string;
+  password?: string;
+  currentLocation?: string;
+  isAvailable: boolean;
+  isActive: boolean;
+  commissionRate: string; // تم التغيير من number إلى string
+  vehicleType?: string;
+  vehicleNumber?: string;
+  email?: string;
+}
+
+interface TransactionFormData {
+  amount: string;
+  type: 'commission' | 'salary' | 'bonus' | 'deduction' | 'withdrawal';
+  description: string;
+  referenceId?: string;
+}
+
+interface CommissionFormData {
+  orderId: string;
+  orderAmount: string;
+  commissionRate: string;
+}
+
 export default function AdminDrivers() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editingDriver, setEditingDriver] = useState<DriverResponse | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<DriverResponse | null>(null);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   
   // Refs للتمرير
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const driversGridRef = useRef<HTMLDivElement>(null);
-  const accountDialogRef = useRef<HTMLDivElement>(null);
-  const transactionsTableRef = useRef<HTMLDivElement>(null);
-  const commissionsTableRef = useRef<HTMLDivElement>(null);
   
   // حالة أزرار التمرير
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<DriverFormData>({
     name: '',
     phone: '',
     password: '',
     currentLocation: '',
     isAvailable: true,
     isActive: true,
-    commissionRate: 70, // نسبة العمولة الافتراضية 70%
+    commissionRate: '70', // تم التغيير إلى string
   });
 
-  const [transactionData, setTransactionData] = useState({
+  const [transactionData, setTransactionData] = useState<TransactionFormData>({
     amount: '',
-    type: 'commission' as 'commission' | 'salary' | 'bonus' | 'deduction' | 'withdrawal',
+    type: 'commission',
     description: '',
     referenceId: '',
   });
 
-  const [commissionData, setCommissionData] = useState({
+  const [commissionData, setCommissionData] = useState<CommissionFormData>({
     orderId: '',
     orderAmount: '',
     commissionRate: '',
   });
 
-  const { data: drivers, isLoading } = useQuery<Driver[]>({
+  // استعلام جلب السائقين
+  const { data: drivers, isLoading } = useQuery<DriverResponse[]>({
     queryKey: ['/api/drivers'],
   });
 
+  // استعلام جلب رصيد السائق
   const { data: driverBalance } = useQuery<DriverBalance>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'balance'],
     enabled: !!selectedDriver,
   });
 
+  // استعلام جلب معاملات السائق
   const { data: driverTransactions } = useQuery<DriverTransaction[]>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'transactions'],
     enabled: !!selectedDriver,
   });
 
+  // استعلام جلب عمولات السائق
   const { data: driverCommissions } = useQuery<DriverCommission[]>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'commissions'],
     enabled: !!selectedDriver,
@@ -97,36 +130,19 @@ export default function AdminDrivers() {
     }
   }, []);
 
-  // الدوال للتمرير
-  const scrollToTop = () => {
-    if (mainContainerRef.current) {
-      mainContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+  // دالة لتحويل القيم العددية إلى نصوص
+  const formatNumberField = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value);
   };
 
-  const scrollToBottom = () => {
-    if (mainContainerRef.current) {
-      mainContainerRef.current.scrollTo({ top: mainContainerRef.current.scrollHeight, behavior: 'smooth' });
-    }
-  };
-
-  const scrollToDriversGrid = () => {
-    driversGridRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const scrollToAccountDialogTop = () => {
-    accountDialogRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const scrollToAccountDialogBottom = () => {
-    if (accountDialogRef.current) {
-      accountDialogRef.current.scrollTo({ top: accountDialogRef.current.scrollHeight, behavior: 'smooth' });
-    }
-  };
-
+  // إضافة سائق جديد
   const createDriverMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const response = await apiRequest('POST', '/api/drivers', data);
+    mutationFn: async (data: DriverFormData) => {
+      const response = await apiRequest('POST', '/api/drivers', {
+        ...data,
+        commissionRate: data.commissionRate || '70'
+      });
       return response.json();
     },
     onSuccess: () => {
@@ -138,16 +154,27 @@ export default function AdminDrivers() {
       resetForm();
       setIsDialogOpen(false);
     },
+    onError: (error: any) => {
+      console.error('Error creating driver:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل إضافة السائق",
+        variant: "destructive",
+      });
+    },
   });
 
+  // تحديث بيانات سائق
   const updateDriverMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof formData> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<DriverFormData> }) => {
       const response = await apiRequest('PUT', `/api/drivers/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'balance'] });
+      if (selectedDriver) {
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'balance'] });
+      }
       toast({
         title: "تم تحديث السائق",
         description: "تم تحديث بيانات السائق بنجاح",
@@ -156,8 +183,17 @@ export default function AdminDrivers() {
       setEditingDriver(null);
       setIsDialogOpen(false);
     },
+    onError: (error: any) => {
+      console.error('Error updating driver:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل تحديث بيانات السائق",
+        variant: "destructive",
+      });
+    },
   });
 
+  // حذف سائق
   const deleteDriverMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await apiRequest('DELETE', `/api/drivers/${id}`);
@@ -170,19 +206,30 @@ export default function AdminDrivers() {
         description: "تم حذف السائق بنجاح",
       });
     },
+    onError: (error: any) => {
+      console.error('Error deleting driver:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل حذف السائق",
+        variant: "destructive",
+      });
+    },
   });
 
+  // إضافة معاملة للسائق
   const createTransactionMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/transactions`, {
         ...transactionData,
-        amount: parseFloat(transactionData.amount),
+        amount: transactionData.amount, // إرسال كنص (API يتوقع string)
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'transactions'] });
+      if (selectedDriver) {
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'transactions'] });
+      }
       toast({
         title: transactionData.type === 'withdrawal' ? "تم سحب المبلغ" : "تم إضافة المعاملة",
         description: `تم ${transactionData.type === 'withdrawal' ? 'سحب' : 'إضافة'} ${transactionData.amount} ريال`,
@@ -190,23 +237,34 @@ export default function AdminDrivers() {
       resetTransactionForm();
       setIsTransactionDialogOpen(false);
     },
+    onError: (error: any) => {
+      console.error('Error creating transaction:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل إضافة المعاملة",
+        variant: "destructive",
+      });
+    },
   });
 
+  // إضافة عمولة للسائق
   const createCommissionMutation = useMutation({
     mutationFn: async () => {
       const commissionAmount = (parseFloat(commissionData.orderAmount) * parseFloat(commissionData.commissionRate)) / 100;
       const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/commissions`, {
         orderId: commissionData.orderId,
-        orderAmount: parseFloat(commissionData.orderAmount),
-        commissionRate: parseFloat(commissionData.commissionRate),
-        commissionAmount,
+        orderAmount: commissionData.orderAmount, // إرسال كنص
+        commissionRate: commissionData.commissionRate, // إرسال كنص
+        commissionAmount: commissionAmount.toString(),
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'commissions'] });
+      if (selectedDriver) {
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'commissions'] });
+      }
       toast({
         title: "تم إضافة العمولة",
         description: "تم احتساب عمولة السائق بنجاح",
@@ -217,19 +275,40 @@ export default function AdminDrivers() {
         commissionRate: '',
       });
     },
+    onError: (error: any) => {
+      console.error('Error creating commission:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل إضافة العمولة",
+        variant: "destructive",
+      });
+    },
   });
 
+  // سحب رصيد السائق
   const processWithdrawalMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/withdraw`, { amount });
+      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/withdraw`, { 
+        amount: amount.toString() 
+      });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver?.id, 'transactions'] });
+      if (selectedDriver) {
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'balance'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'transactions'] });
+      }
       toast({
         title: "تم السحب",
         description: "تم سحب المبلغ بنجاح",
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error processing withdrawal:', error);
+      toast({
+        title: "خطأ",
+        description: error.message || "فشل عملية السحب",
+        variant: "destructive",
       });
     },
   });
@@ -242,7 +321,7 @@ export default function AdminDrivers() {
       currentLocation: '',
       isAvailable: true,
       isActive: true,
-      commissionRate: 70,
+      commissionRate: '70',
     });
     setEditingDriver(null);
   };
@@ -256,21 +335,24 @@ export default function AdminDrivers() {
     });
   };
 
-  const handleEdit = (driver: Driver) => {
+  const handleEdit = (driver: DriverResponse) => {
     setEditingDriver(driver);
     setFormData({
       name: driver.name,
       phone: driver.phone,
-      password: '', // Don't show password
+      password: '', // لا نعرض كلمة المرور عند التعديل
       currentLocation: driver.currentLocation || '',
       isAvailable: driver.isAvailable,
       isActive: driver.isActive,
-      commissionRate: driver.commissionRate || 70,
+      commissionRate: formatNumberField(driver.commissionRate) || '70',
+      vehicleType: driver.vehicleType || '',
+      vehicleNumber: driver.vehicleNumber || '',
+      email: driver.email || '',
     });
     setIsDialogOpen(true);
   };
 
-  const handleManageAccount = (driver: Driver) => {
+  const handleManageAccount = (driver: DriverResponse) => {
     setSelectedDriver(driver);
     setIsAccountDialogOpen(true);
   };
@@ -278,25 +360,49 @@ export default function AdminDrivers() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name.trim() || !formData.phone.trim()) {
+    // التحقق من البيانات
+    if (!formData.name.trim()) {
       toast({
         title: "خطأ",
-        description: "يرجى إدخال الاسم ورقم الهاتف",
+        description: "يرجى إدخال اسم السائق",
         variant: "destructive",
       });
       return;
     }
 
-    if (formData.commissionRate < 0 || formData.commissionRate > 100) {
+    if (!formData.phone.trim()) {
       toast({
         title: "خطأ",
-        description: "يرجى إدخال نسبة عمولة صحيحة (0-100)",
+        description: "يرجى إدخال رقم الهاتف",
         variant: "destructive",
       });
       return;
     }
 
-    if (!editingDriver && !formData.password.trim()) {
+    // التحقق من صحة رقم الهاتف (أساسي)
+    const phoneRegex = /^[\+]?[0-9]{10,15}$/;
+    if (!phoneRegex.test(formData.phone.replace(/\D/g, ''))) {
+      toast({
+        title: "خطأ",
+        description: "يرجى إدخال رقم هاتف صحيح",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // التحقق من نسبة العمولة
+    const commissionRate = parseFloat(formData.commissionRate);
+    if (isNaN(commissionRate) || commissionRate < 0 || commissionRate > 100) {
+      toast({
+        title: "خطأ",
+        description: "يرجى إدخال نسبة عمولة صحيحة بين 0 و 100",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // التحقق من كلمة المرور للسائق الجديد
+    if (!editingDriver && !formData.password?.trim()) {
       toast({
         title: "خطأ",
         description: "يرجى إدخال كلمة المرور للسائق الجديد",
@@ -305,14 +411,21 @@ export default function AdminDrivers() {
       return;
     }
 
-    const submitData = editingDriver && !formData.password.trim() 
-      ? { ...formData, password: undefined } 
-      : formData;
+    // إعداد البيانات للإرسال
+    const submitData: any = { ...formData };
+    
+    // إزالة كلمة المرور إذا كانت فارغة عند التعديل
+    if (editingDriver && !submitData.password) {
+      delete submitData.password;
+    }
+
+    // التحويل إلى النوع المطلوب
+    submitData.commissionRate = formData.commissionRate;
 
     if (editingDriver) {
       updateDriverMutation.mutate({ id: editingDriver.id, data: submitData });
     } else {
-      createDriverMutation.mutate(formData);
+      createDriverMutation.mutate(submitData);
     }
   };
 
@@ -386,16 +499,30 @@ export default function AdminDrivers() {
     processWithdrawalMutation.mutate(driverBalance.availableBalance);
   };
 
-  const toggleDriverStatus = (driver: Driver, field: 'isAvailable' | 'isActive') => {
+  const toggleDriverStatus = (driver: DriverResponse, field: 'isAvailable' | 'isActive') => {
     updateDriverMutation.mutate({
       id: driver.id,
       data: { [field]: !driver[field] }
     });
   };
 
+  // دوال التمرير
+  const scrollToTop = () => {
+    mainContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
+  const scrollToBottom = () => {
+    if (mainContainerRef.current) {
+      mainContainerRef.current.scrollTo({ 
+        top: mainContainerRef.current.scrollHeight, 
+        behavior: 'smooth' 
+      });
+    }
+  };
 
-
+  const scrollToDriversGrid = () => {
+    driversGridRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const getTransactionTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
@@ -409,9 +536,18 @@ export default function AdminDrivers() {
     return labels[type] || type;
   };
 
+  // دالة لتحويل الأرباح إلى صيغة قابلة للعرض
+  const getDriverEarnings = (driver: DriverResponse) => {
+    const earnings = driver.totalEarnings || 0;
+    if (typeof earnings === 'string') {
+      return parseFloat(earnings) || 0;
+    }
+    return earnings;
+  };
+
   return (
     <div className="relative" ref={mainContainerRef} style={{ maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
-      {/* أزرار التمرير العائمة للصفحة الرئيسية */}
+      {/* أزرار التمرير العائمة */}
       <div className="fixed right-6 bottom-6 z-50 flex flex-col gap-2">
         {showScrollToTop && (
           <Button
@@ -438,7 +574,6 @@ export default function AdminDrivers() {
           size="icon"
           className="rounded-full shadow-lg h-10 w-10 bg-secondary hover:bg-secondary/90"
           aria-label="الذهاب إلى قائمة السائقين"
-          title="الذهاب إلى قائمة السائقين"
         >
           <Truck className="h-5 w-5" />
         </Button>
@@ -446,7 +581,7 @@ export default function AdminDrivers() {
 
       <div className="space-y-6 p-4 md:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Truck className="h-8 w-8 text-primary" />
             <div>
@@ -455,13 +590,12 @@ export default function AdminDrivers() {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <Button
               onClick={scrollToDriversGrid}
               variant="outline"
               size="sm"
-              className="gap-2"
-              title="الذهاب إلى قائمة السائقين"
+              className="gap-2 justify-center"
             >
               <Truck className="h-4 w-4" />
               قائمة السائقين
@@ -470,7 +604,7 @@ export default function AdminDrivers() {
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button 
-                  className="gap-2"
+                  className="gap-2 justify-center"
                   onClick={() => {
                     resetForm();
                     setIsDialogOpen(true);
@@ -505,6 +639,7 @@ export default function AdminDrivers() {
                     <Label htmlFor="phone">رقم الهاتف</Label>
                     <Input
                       id="phone"
+                      type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                       placeholder="+967-771234567"
@@ -529,32 +664,57 @@ export default function AdminDrivers() {
                   </div>
 
                   <div>
-                    <Label htmlFor="location">الموقع الحالي</Label>
-                    <Input
-                      id="location"
-                      value={formData.currentLocation}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currentLocation: e.target.value }))}
-                      placeholder="الموقع الحالي للسائق"
-                      data-testid="input-driver-location"
-                    />
-                  </div>
-
-                  <div>
                     <Label htmlFor="commissionRate">نسبة العمولة (%)</Label>
                     <Input
                       id="commissionRate"
-                      type="number"
-                      min="0"
-                      max="100"
+                      type="text" // استخدام text بدلاً من number لتجنب المشاكل
+                      inputMode="decimal"
                       value={formData.commissionRate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, commissionRate: parseInt(e.target.value) || 70 }))}
-                      placeholder="نسبة العمولة من كل طلب"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // السماح فقط بالأرقام والنقطة
+                        if (/^\d*\.?\d*$/.test(value)) {
+                          setFormData(prev => ({ ...prev, commissionRate: value }));
+                        }
+                      }}
+                      placeholder="70"
                       required
                       data-testid="input-driver-commission"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      النسبة المئوية التي يحصل عليها السائق من كل طلب
+                      النسبة المئوية التي يحصل عليها السائق من كل طلب (0-100)
                     </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="vehicleType">نوع المركبة (اختياري)</Label>
+                    <Input
+                      id="vehicleType"
+                      value={formData.vehicleType || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, vehicleType: e.target.value }))}
+                      placeholder="مثلاً: دراجة نارية، سيارة"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="vehicleNumber">رقم المركبة (اختياري)</Label>
+                    <Input
+                      id="vehicleNumber"
+                      value={formData.vehicleNumber || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, vehicleNumber: e.target.value }))}
+                      placeholder="رقم لوحة المركبة"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="email">البريد الإلكتروني (اختياري)</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="email@example.com"
+                    />
                   </div>
 
                   <div className="space-y-3">
@@ -610,27 +770,18 @@ export default function AdminDrivers() {
 
         {/* Drivers Grid */}
         <div ref={driversGridRef} className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-xl font-semibold">قائمة السائقين</h2>
             <div className="flex items-center gap-2">
-              <Button
-                onClick={() => driversGridRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8"
-                title="التمرير للأعلى"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </Button>
               <span className="text-sm text-muted-foreground">
                 {drivers?.length || 0} سائق
               </span>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {isLoading ? (
-              [...Array(6)].map((_, i) => (
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {[...Array(6)].map((_, i) => (
                 <Card key={i} className="animate-pulse">
                   <CardContent className="p-6">
                     <div className="w-16 h-16 bg-muted rounded-full mb-4 mx-auto" />
@@ -638,16 +789,18 @@ export default function AdminDrivers() {
                     <div className="h-3 bg-muted rounded w-1/2 mx-auto" />
                   </CardContent>
                 </Card>
-              ))
-            ) : drivers?.length ? (
-              drivers.map((driver) => (
+              ))}
+            </div>
+          ) : drivers?.length ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {drivers.map((driver) => (
                 <Card key={driver.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="text-center pb-3">
                     <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
                       <User className="h-8 w-8 text-primary" />
                     </div>
-                    <CardTitle className="text-lg">{driver.name}</CardTitle>
-                    <div className="flex items-center justify-center gap-2 mt-2">
+                    <CardTitle className="text-lg truncate">{driver.name}</CardTitle>
+                    <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
                       <Badge variant={driver.isActive ? "default" : "secondary"}>
                         {driver.isActive ? 'نشط' : 'غير نشط'}
                       </Badge>
@@ -660,35 +813,35 @@ export default function AdminDrivers() {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-foreground">{driver.phone}</span>
+                        <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm text-foreground truncate">{driver.phone}</span>
                       </div>
                       
                       {driver.currentLocation && (
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm text-foreground">{driver.currentLocation}</span>
+                          <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="text-sm text-foreground truncate">{driver.currentLocation}</span>
                         </div>
                       )}
                       
                       <div className="flex items-center gap-2">
-                        <Coins className="h-4 w-4 text-muted-foreground" />
+                        <Coins className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-sm text-foreground">
-                          نسبة العمولة: {driver.commissionRate || 70}%
+                          نسبة العمولة: {formatNumberField(driver.commissionRate) || '70'}%
                         </span>
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <Wallet className="h-4 w-4 text-muted-foreground" />
+                        <Wallet className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-sm font-medium text-foreground">
-                          الرصيد: {formatCurrency(driver.totalEarnings || 0)}
+                          الرصيد: {formatCurrency(getDriverEarnings(driver))}
                         </span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div className="text-center">
-                        <p className="text-xs text-muted-foreground">متاح للعمل</p>
+                        <p className="text-xs text-muted-foreground mb-1">متاح للعمل</p>
                         <Switch
                           checked={driver.isAvailable}
                           onCheckedChange={() => toggleDriverStatus(driver, 'isAvailable')}
@@ -696,7 +849,7 @@ export default function AdminDrivers() {
                         />
                       </div>
                       <div className="text-center">
-                        <p className="text-xs text-muted-foreground">نشط</p>
+                        <p className="text-xs text-muted-foreground mb-1">نشط</p>
                         <Switch
                           checked={driver.isActive}
                           onCheckedChange={() => toggleDriverStatus(driver, 'isActive')}
@@ -709,7 +862,7 @@ export default function AdminDrivers() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex-1 gap-2"
+                        className="flex-1 gap-2 min-w-0"
                         onClick={() => handleEdit(driver)}
                         data-testid={`button-edit-driver-${driver.id}`}
                       >
@@ -720,7 +873,7 @@ export default function AdminDrivers() {
                       <Button
                         variant="default"
                         size="sm"
-                        className="flex-1 gap-2"
+                        className="flex-1 gap-2 min-w-0"
                         onClick={() => handleManageAccount(driver)}
                         data-testid={`button-manage-account-${driver.id}`}
                       >
@@ -746,7 +899,7 @@ export default function AdminDrivers() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-destructive hover:text-destructive"
+                            className="text-destructive hover:text-destructive flex-shrink-0 w-10 px-0"
                             data-testid={`button-delete-driver-${driver.id}`}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -774,64 +927,42 @@ export default function AdminDrivers() {
                     </div>
                   </CardContent>
                 </Card>
-              ))
-            ) : (
-              <div className="col-span-full text-center py-12">
-                <Truck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-foreground mb-2">لا توجد سائقين</h3>
-                <p className="text-muted-foreground mb-4">ابدأ بإضافة سائقين لخدمة التوصيل</p>
-                <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-first-driver">
-                  إضافة السائق الأول
-                </Button>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="col-span-full text-center py-12 border rounded-lg">
+              <Truck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">لا توجد سائقين</h3>
+              <p className="text-muted-foreground mb-4">ابدأ بإضافة سائقين لخدمة التوصيل</p>
+              <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-first-driver">
+                إضافة السائق الأول
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Account Management Dialog */}
         <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
-          <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
-            <DialogHeader className="sticky top-0 bg-background z-10 pb-4 border-b">
+          <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
+            <DialogHeader className="sticky top-0 bg-background z-10 p-6 pb-4 border-b">
               <DialogTitle>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5" />
-                    إدارة رصيد السائق: {selectedDriver?.name}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={scrollToAccountDialogTop}
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8"
-                      title="التمرير للأعلى"
-                    >
-                      <ChevronUp className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      onClick={scrollToAccountDialogBottom}
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8"
-                      title="التمرير للأسفل"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5" />
+                  إدارة رصيد السائق: {selectedDriver?.name}
                 </div>
               </DialogTitle>
             </DialogHeader>
             
-            <div ref={accountDialogRef} className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto p-6">
               <Tabs defaultValue="balance" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 sticky top-0 bg-background z-10">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="balance">الرصيد والعمولات</TabsTrigger>
                   <TabsTrigger value="transactions">سجل المعاملات</TabsTrigger>
                   <TabsTrigger value="commissions">عمولات الطلبات</TabsTrigger>
                 </TabsList>
                 
                 {/* Balance Tab */}
-                <TabsContent value="balance" className="space-y-6 p-4">
+                <TabsContent value="balance" className="space-y-6 mt-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Card>
                       <CardHeader className="pb-2">
@@ -898,6 +1029,7 @@ export default function AdminDrivers() {
                                 <SelectItem value="salary">راتب</SelectItem>
                                 <SelectItem value="bonus">مكافأة</SelectItem>
                                 <SelectItem value="deduction">خصم</SelectItem>
+                                <SelectItem value="withdrawal">سحب</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -906,11 +1038,16 @@ export default function AdminDrivers() {
                             <Label htmlFor="amount">المبلغ (ريال)</Label>
                             <Input
                               id="amount"
-                              type="number"
-                              min="0"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               value={transactionData.amount}
-                              onChange={(e) => setTransactionData(prev => ({ ...prev, amount: e.target.value }))}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // التحقق من صحة الرقم
+                                if (/^\d*\.?\d*$/.test(value)) {
+                                  setTransactionData(prev => ({ ...prev, amount: value }));
+                                }
+                              }}
                               placeholder="أدخل المبلغ"
                               required
                             />
@@ -927,18 +1064,12 @@ export default function AdminDrivers() {
                             />
                           </div>
 
-                          <div className="space-y-2">
-                            <Label htmlFor="referenceId">رقم المرجع (اختياري)</Label>
-                            <Input
-                              id="referenceId"
-                              value={transactionData.referenceId}
-                              onChange={(e) => setTransactionData(prev => ({ ...prev, referenceId: e.target.value }))}
-                              placeholder="رقم الطلب أو المرجع"
-                            />
-                          </div>
-
-                          <Button type="submit" className="w-full" disabled={createTransactionMutation.isPending}>
-                            إضافة المعاملة
+                          <Button 
+                            type="submit" 
+                            className="w-full" 
+                            disabled={createTransactionMutation.isPending}
+                          >
+                            {createTransactionMutation.isPending ? 'جاري الإضافة...' : 'إضافة المعاملة'}
                           </Button>
                         </form>
                       </CardContent>
@@ -966,11 +1097,15 @@ export default function AdminDrivers() {
                             <Label htmlFor="orderAmount">مبلغ الطلب (ريال)</Label>
                             <Input
                               id="orderAmount"
-                              type="number"
-                              min="0"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               value={commissionData.orderAmount}
-                              onChange={(e) => setCommissionData(prev => ({ ...prev, orderAmount: e.target.value }))}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (/^\d*\.?\d*$/.test(value)) {
+                                  setCommissionData(prev => ({ ...prev, orderAmount: value }));
+                                }
+                              }}
                               placeholder="مبلغ الطلب"
                               required
                             />
@@ -980,21 +1115,29 @@ export default function AdminDrivers() {
                             <Label htmlFor="commissionRate">نسبة العمولة (%)</Label>
                             <Input
                               id="commissionRate"
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={commissionData.commissionRate || selectedDriver?.commissionRate || 70}
-                              onChange={(e) => setCommissionData(prev => ({ ...prev, commissionRate: e.target.value }))}
+                              type="text"
+                              inputMode="decimal"
+                              value={commissionData.commissionRate || formatNumberField(selectedDriver?.commissionRate) || '70'}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (/^\d*\.?\d*$/.test(value)) {
+                                  setCommissionData(prev => ({ ...prev, commissionRate: value }));
+                                }
+                              }}
                               placeholder="نسبة العمولة"
                               required
                             />
                             <p className="text-xs text-muted-foreground mt-1">
-                              النسبة المئوية: {((parseFloat(commissionData.orderAmount || '0') * parseFloat(commissionData.commissionRate || '0')) / 100).toFixed(2)} ريال
+                              قيمة العمولة: {((parseFloat(commissionData.orderAmount || '0') * parseFloat(commissionData.commissionRate || '0')) / 100).toFixed(2)} ريال
                             </p>
                           </div>
 
-                          <Button type="submit" className="w-full" disabled={createCommissionMutation.isPending}>
-                            احتساب العمولة
+                          <Button 
+                            type="submit" 
+                            className="w-full" 
+                            disabled={createCommissionMutation.isPending}
+                          >
+                            {createCommissionMutation.isPending ? 'جاري الحساب...' : 'احتساب العمولة'}
                           </Button>
                         </form>
                       </CardContent>
@@ -1006,7 +1149,7 @@ export default function AdminDrivers() {
                       <CardTitle className="text-lg">سحب الرصيد</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div>
                           <p className="text-sm font-medium">الرصيد المتاح للسحب</p>
                           <p className="text-2xl font-bold text-green-600">
@@ -1019,7 +1162,7 @@ export default function AdminDrivers() {
                           className="gap-2"
                         >
                           <ArrowUpDown className="h-4 w-4" />
-                          سحب الرصيد
+                          {processWithdrawalMutation.isPending ? 'جاري السحب...' : 'سحب الرصيد'}
                         </Button>
                       </div>
                       <p className="text-sm text-muted-foreground">
@@ -1030,169 +1173,111 @@ export default function AdminDrivers() {
                 </TabsContent>
                 
                 {/* Transactions Tab */}
-                <TabsContent value="transactions" className="p-4">
+                <TabsContent value="transactions" className="mt-4">
                   <Card>
-                    <CardHeader className="sticky top-0 bg-card z-10">
-                      <div className="flex items-center justify-between">
-                        <CardTitle>سجل المعاملات</CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => transactionsTableRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8"
-                            title="التمرير للأعلى"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              if (transactionsTableRef.current) {
-                                transactionsTableRef.current.scrollTo({ 
-                                  top: transactionsTableRef.current.scrollHeight, 
-                                  behavior: 'smooth' 
-                                });
-                              }
-                            }}
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8"
-                            title="التمرير للأسفل"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                    <CardHeader>
+                      <CardTitle>سجل المعاملات</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ScrollArea className="h-[400px]">
-                        <div ref={transactionsTableRef}>
-                          <Table>
-                            <TableHeader className="sticky top-0 bg-background">
-                              <TableRow>
-                                <TableHead>التاريخ</TableHead>
-                                <TableHead>النوع</TableHead>
-                                <TableHead>المبلغ</TableHead>
-                                <TableHead>الوصف</TableHead>
-                                <TableHead>الرصيد بعد</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {driverTransactions?.length ? (
-                                driverTransactions.map((transaction) => (
-                                  <TableRow key={transaction.id}>
-                                    <TableCell>{formatDate(transaction.createdAt)}</TableCell>
-                                    <TableCell>
-                                      <Badge variant={
-                                        transaction.type === 'commission' || transaction.type === 'salary' || transaction.type === 'bonus'
-                                          ? 'default'
-                                          : transaction.type === 'deduction'
-                                          ? 'destructive'
-                                          : 'secondary'
-                                      }>
-                                        {getTransactionTypeLabel(transaction.type)}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className={
-                                      transaction.type === 'deduction' || transaction.type === 'withdrawal'
-                                        ? 'text-red-600'
-                                        : 'text-green-600'
-                                    }>
-                                      {transaction.type === 'deduction' || transaction.type === 'withdrawal' ? '-' : '+'}
-                                      {formatCurrency(transaction.amount)}
-                                    </TableCell>
-                                    <TableCell>{transaction.description}</TableCell>
-                                    <TableCell>{formatCurrency(transaction.balanceAfter)}</TableCell>
-                                  </TableRow>
-                                ))
-                              ) : (
-                                <TableRow>
-                                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                    لا توجد معاملات
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>التاريخ</TableHead>
+                              <TableHead>النوع</TableHead>
+                              <TableHead>المبلغ</TableHead>
+                              <TableHead>الوصف</TableHead>
+                              <TableHead>الرصيد بعد</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {driverTransactions?.length ? (
+                              driverTransactions.map((transaction) => (
+                                <TableRow key={transaction.id}>
+                                  <TableCell className="whitespace-nowrap">
+                                    {formatDate(transaction.createdAt)}
                                   </TableCell>
+                                  <TableCell>
+                                    <Badge variant={
+                                      transaction.type === 'commission' || transaction.type === 'salary' || transaction.type === 'bonus'
+                                        ? 'default'
+                                        : transaction.type === 'deduction' || transaction.type === 'withdrawal'
+                                        ? 'destructive'
+                                        : 'secondary'
+                                    }>
+                                      {getTransactionTypeLabel(transaction.type)}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className={
+                                    transaction.type === 'deduction' || transaction.type === 'withdrawal'
+                                      ? 'text-red-600'
+                                      : 'text-green-600'
+                                  }>
+                                    {transaction.type === 'deduction' || transaction.type === 'withdrawal' ? '-' : '+'}
+                                    {formatCurrency(transaction.amount)}
+                                  </TableCell>
+                                  <TableCell className="max-w-[200px] truncate" title={transaction.description}>
+                                    {transaction.description}
+                                  </TableCell>
+                                  <TableCell>{formatCurrency(transaction.balanceAfter)}</TableCell>
                                 </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <ScrollBar orientation="vertical" />
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                  لا توجد معاملات
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
                       </ScrollArea>
                     </CardContent>
                   </Card>
                 </TabsContent>
                 
                 {/* Commissions Tab */}
-                <TabsContent value="commissions" className="p-4">
+                <TabsContent value="commissions" className="mt-4">
                   <Card>
-                    <CardHeader className="sticky top-0 bg-card z-10">
-                      <div className="flex items-center justify-between">
-                        <CardTitle>عمولات الطلبات</CardTitle>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => commissionsTableRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8"
-                            title="التمرير للأعلى"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              if (commissionsTableRef.current) {
-                                commissionsTableRef.current.scrollTo({ 
-                                  top: commissionsTableRef.current.scrollHeight, 
-                                  behavior: 'smooth' 
-                                });
-                              }
-                            }}
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8"
-                            title="التمرير للأسفل"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                    <CardHeader>
+                      <CardTitle>عمولات الطلبات</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <ScrollArea className="h-[400px]">
-                        <div ref={commissionsTableRef}>
-                          <Table>
-                            <TableHeader className="sticky top-0 bg-background">
-                              <TableRow>
-                                <TableHead>رقم الطلب</TableHead>
-                                <TableHead>مبلغ الطلب</TableHead>
-                                <TableHead>نسبة العمولة</TableHead>
-                                <TableHead>قيمة العمولة</TableHead>
-                                <TableHead>التاريخ</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {driverCommissions?.length ? (
-                                driverCommissions.map((commission) => (
-                                  <TableRow key={commission.id}>
-                                    <TableCell className="font-medium">{commission.orderId}</TableCell>
-                                    <TableCell>{formatCurrency(commission.orderAmount)}</TableCell>
-                                    <TableCell>{commission.commissionRate}%</TableCell>
-                                    <TableCell className="text-green-600 font-medium">
-                                      {formatCurrency(commission.commissionAmount)}
-                                    </TableCell>
-                                    <TableCell>{formatDate(commission.createdAt)}</TableCell>
-                                  </TableRow>
-                                ))
-                              ) : (
-                                <TableRow>
-                                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                    لا توجد عمولات
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>رقم الطلب</TableHead>
+                              <TableHead>مبلغ الطلب</TableHead>
+                              <TableHead>نسبة العمولة</TableHead>
+                              <TableHead>قيمة العمولة</TableHead>
+                              <TableHead>التاريخ</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {driverCommissions?.length ? (
+                              driverCommissions.map((commission) => (
+                                <TableRow key={commission.id}>
+                                  <TableCell className="font-medium">{commission.orderId}</TableCell>
+                                  <TableCell>{formatCurrency(commission.orderAmount)}</TableCell>
+                                  <TableCell>{commission.commissionRate}%</TableCell>
+                                  <TableCell className="text-green-600 font-medium">
+                                    {formatCurrency(commission.commissionAmount)}
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap">
+                                    {formatDate(commission.createdAt)}
                                   </TableCell>
                                 </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <ScrollBar orientation="vertical" />
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                  لا توجد عمولات
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
                       </ScrollArea>
                     </CardContent>
                   </Card>
@@ -1200,21 +1285,12 @@ export default function AdminDrivers() {
               </Tabs>
             </div>
             
-            <DialogFooter className="sticky bottom-0 bg-background pt-4 border-t">
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <DialogFooter className="sticky bottom-0 bg-background p-6 pt-4 border-t">
+              <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-4">
+                <div className="text-sm text-muted-foreground">
                   <span>آخر تحديث: {new Date().toLocaleTimeString('ar-SA')}</span>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={scrollToAccountDialogTop}
-                    size="sm"
-                    className="gap-1"
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                    أعلى
-                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => {
