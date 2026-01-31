@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit, Trash2, Truck, Save, X, Phone, MapPin, DollarSign, User, Wallet, History, CreditCard, ArrowUpDown, Receipt, Coins, Award, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Edit, Trash2, Truck, Save, X, Phone, MapPin, User, Wallet, History, Coins, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,10 +18,9 @@ import { apiRequest } from '@/lib/queryClient';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Driver, DriverTransaction, DriverBalance, DriverCommission } from '@shared/schema';
 
-// تعريف الأنواع المتوقعة من API
-interface DriverResponse extends Driver {
-  totalEarnings?: string | number;
+interface DriverResponse extends Omit<Driver, 'commissionRate'> {
   commissionRate?: string | number;
+  totalEarnings?: string | number;
 }
 
 interface DriverFormData {
@@ -31,10 +30,12 @@ interface DriverFormData {
   currentLocation?: string;
   isAvailable: boolean;
   isActive: boolean;
-  commissionRate: string; // تم التغيير من number إلى string
+  commissionRate: string;
   vehicleType?: string;
   vehicleNumber?: string;
   email?: string;
+  paymentMode?: string;
+  salaryAmount?: string;
 }
 
 interface TransactionFormData {
@@ -57,13 +58,10 @@ export default function AdminDrivers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<DriverResponse | null>(null);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
-  const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   
-  // Refs للتمرير
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const driversGridRef = useRef<HTMLDivElement>(null);
   
-  // حالة أزرار التمرير
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
@@ -74,7 +72,7 @@ export default function AdminDrivers() {
     currentLocation: '',
     isAvailable: true,
     isActive: true,
-    commissionRate: '70', // تم التغيير إلى string
+    commissionRate: '70.00',
   });
 
   const [transactionData, setTransactionData] = useState<TransactionFormData>({
@@ -90,30 +88,25 @@ export default function AdminDrivers() {
     commissionRate: '',
   });
 
-  // استعلام جلب السائقين
   const { data: drivers, isLoading } = useQuery<DriverResponse[]>({
     queryKey: ['/api/drivers'],
   });
 
-  // استعلام جلب رصيد السائق
   const { data: driverBalance } = useQuery<DriverBalance>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'balance'],
     enabled: !!selectedDriver,
   });
 
-  // استعلام جلب معاملات السائق
   const { data: driverTransactions } = useQuery<DriverTransaction[]>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'transactions'],
     enabled: !!selectedDriver,
   });
 
-  // استعلام جلب عمولات السائق
   const { data: driverCommissions } = useQuery<DriverCommission[]>({
     queryKey: ['/api/drivers', selectedDriver?.id, 'commissions'],
     enabled: !!selectedDriver,
   });
 
-  // متابعة التمرير للصفحة الرئيسية
   useEffect(() => {
     const handleScroll = () => {
       if (mainContainerRef.current) {
@@ -130,25 +123,62 @@ export default function AdminDrivers() {
     }
   }, []);
 
-  // دالة لتحويل القيم العددية إلى نصوص
-  const formatNumberField = (value: any): string => {
-    if (value === null || value === undefined) return '';
-    return String(value);
+  // دالة لتحويل القيم العددية إلى نصية بصيغة مناسبة
+  const formatDecimalField = (value: any): string => {
+    if (value === null || value === undefined || value === '') return '0.00';
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+  };
+
+  // دالة لتنظيف رقم الهاتف
+  const cleanPhoneNumber = (phone: string): string => {
+    return phone.replace(/\D/g, '');
   };
 
   // إضافة سائق جديد
   const createDriverMutation = useMutation({
     mutationFn: async (data: DriverFormData) => {
-      const response = await apiRequest('POST', '/api/drivers', {
-        ...data,
-        commissionRate: data.commissionRate || '70'
-      });
+      // تحضير البيانات للإرسال
+      const requestData: Record<string, any> = {
+        name: data.name.trim(),
+        phone: cleanPhoneNumber(data.phone),
+        isAvailable: data.isAvailable,
+        isActive: data.isActive,
+        commissionRate: formatDecimalField(data.commissionRate),
+        paymentMode: 'commission',
+        salaryAmount: '0.00',
+      };
+
+      // إضافة كلمة المرور فقط إذا كانت موجودة
+      if (data.password && data.password.trim()) {
+        requestData.password = data.password.trim();
+      }
+
+      // إضافة الحقول الاختيارية إذا كانت موجودة
+      if (data.currentLocation && data.currentLocation.trim()) {
+        requestData.currentLocation = data.currentLocation.trim();
+      }
+      if (data.vehicleType && data.vehicleType.trim()) {
+        requestData.vehicleType = data.vehicleType.trim();
+      }
+      if (data.vehicleNumber && data.vehicleNumber.trim()) {
+        requestData.vehicleNumber = data.vehicleNumber.trim();
+      }
+      if (data.email && data.email.trim()) {
+        requestData.email = data.email.trim();
+      }
+
+      const response = await apiRequest('POST', '/api/drivers', requestData);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.details?.[0]?.message || 'فشل إضافة السائق');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
       toast({
-        title: "تم إضافة السائق",
+        title: "✅ تم إضافة السائق",
         description: "تم إضافة السائق الجديد بنجاح",
       });
       resetForm();
@@ -157,8 +187,8 @@ export default function AdminDrivers() {
     onError: (error: any) => {
       console.error('Error creating driver:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل إضافة السائق",
+        title: "❌ خطأ في إضافة السائق",
+        description: error.message || "حدث خطأ أثناء إضافة السائق",
         variant: "destructive",
       });
     },
@@ -167,7 +197,29 @@ export default function AdminDrivers() {
   // تحديث بيانات سائق
   const updateDriverMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<DriverFormData> }) => {
-      const response = await apiRequest('PUT', `/api/drivers/${id}`, data);
+      const requestData: Record<string, any> = {};
+
+      // إضافة الحقول المحدثة فقط
+      if (data.name !== undefined) requestData.name = data.name.trim();
+      if (data.phone !== undefined) requestData.phone = cleanPhoneNumber(data.phone);
+      if (data.isAvailable !== undefined) requestData.isAvailable = data.isAvailable;
+      if (data.isActive !== undefined) requestData.isActive = data.isActive;
+      if (data.commissionRate !== undefined) requestData.commissionRate = formatDecimalField(data.commissionRate);
+      if (data.currentLocation !== undefined) requestData.currentLocation = data.currentLocation?.trim();
+      if (data.vehicleType !== undefined) requestData.vehicleType = data.vehicleType?.trim();
+      if (data.vehicleNumber !== undefined) requestData.vehicleNumber = data.vehicleNumber?.trim();
+      if (data.email !== undefined) requestData.email = data.email?.trim();
+      
+      // إضافة كلمة المرور فقط إذا كانت موجودة وليست فارغة
+      if (data.password !== undefined && data.password && data.password.trim()) {
+        requestData.password = data.password.trim();
+      }
+
+      const response = await apiRequest('PUT', `/api/drivers/${id}`, requestData);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.details?.[0]?.message || 'فشل تحديث السائق');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -176,7 +228,7 @@ export default function AdminDrivers() {
         queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'balance'] });
       }
       toast({
-        title: "تم تحديث السائق",
+        title: "✅ تم تحديث السائق",
         description: "تم تحديث بيانات السائق بنجاح",
       });
       resetForm();
@@ -186,8 +238,8 @@ export default function AdminDrivers() {
     onError: (error: any) => {
       console.error('Error updating driver:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل تحديث بيانات السائق",
+        title: "❌ خطأ في تحديث السائق",
+        description: error.message || "حدث خطأ أثناء تحديث السائق",
         variant: "destructive",
       });
     },
@@ -197,20 +249,24 @@ export default function AdminDrivers() {
   const deleteDriverMutation = useMutation({
     mutationFn: async (id: string) => {
       const response = await apiRequest('DELETE', `/api/drivers/${id}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'فشل حذف السائق');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
       toast({
-        title: "تم حذف السائق",
+        title: "✅ تم حذف السائق",
         description: "تم حذف السائق بنجاح",
       });
     },
     onError: (error: any) => {
       console.error('Error deleting driver:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل حذف السائق",
+        title: "❌ خطأ في حذف السائق",
+        description: error.message || "حدث خطأ أثناء حذف السائق",
         variant: "destructive",
       });
     },
@@ -219,10 +275,16 @@ export default function AdminDrivers() {
   // إضافة معاملة للسائق
   const createTransactionMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/transactions`, {
+      const requestData = {
         ...transactionData,
-        amount: transactionData.amount, // إرسال كنص (API يتوقع string)
-      });
+        amount: formatDecimalField(transactionData.amount),
+      };
+
+      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/transactions`, requestData);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'فشل إضافة المعاملة');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -231,17 +293,16 @@ export default function AdminDrivers() {
         queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'transactions'] });
       }
       toast({
-        title: transactionData.type === 'withdrawal' ? "تم سحب المبلغ" : "تم إضافة المعاملة",
+        title: "✅ تم إضافة المعاملة",
         description: `تم ${transactionData.type === 'withdrawal' ? 'سحب' : 'إضافة'} ${transactionData.amount} ريال`,
       });
       resetTransactionForm();
-      setIsTransactionDialogOpen(false);
     },
     onError: (error: any) => {
       console.error('Error creating transaction:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل إضافة المعاملة",
+        title: "❌ خطأ في إضافة المعاملة",
+        description: error.message || "حدث خطأ أثناء إضافة المعاملة",
         variant: "destructive",
       });
     },
@@ -251,12 +312,18 @@ export default function AdminDrivers() {
   const createCommissionMutation = useMutation({
     mutationFn: async () => {
       const commissionAmount = (parseFloat(commissionData.orderAmount) * parseFloat(commissionData.commissionRate)) / 100;
-      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/commissions`, {
-        orderId: commissionData.orderId,
-        orderAmount: commissionData.orderAmount, // إرسال كنص
-        commissionRate: commissionData.commissionRate, // إرسال كنص
-        commissionAmount: commissionAmount.toString(),
-      });
+      const requestData = {
+        orderId: commissionData.orderId.trim(),
+        orderAmount: formatDecimalField(commissionData.orderAmount),
+        commissionRate: formatDecimalField(commissionData.commissionRate),
+        commissionAmount: commissionAmount.toFixed(2),
+      };
+
+      const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/commissions`, requestData);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'فشل إضافة العمولة');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -266,7 +333,7 @@ export default function AdminDrivers() {
         queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'commissions'] });
       }
       toast({
-        title: "تم إضافة العمولة",
+        title: "✅ تم إضافة العمولة",
         description: "تم احتساب عمولة السائق بنجاح",
       });
       setCommissionData({
@@ -278,8 +345,8 @@ export default function AdminDrivers() {
     onError: (error: any) => {
       console.error('Error creating commission:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل إضافة العمولة",
+        title: "❌ خطأ في إضافة العمولة",
+        description: error.message || "حدث خطأ أثناء إضافة العمولة",
         variant: "destructive",
       });
     },
@@ -289,8 +356,12 @@ export default function AdminDrivers() {
   const processWithdrawalMutation = useMutation({
     mutationFn: async (amount: number) => {
       const response = await apiRequest('POST', `/api/drivers/${selectedDriver?.id}/withdraw`, { 
-        amount: amount.toString() 
+        amount: amount.toFixed(2)
       });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'فشل عملية السحب');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -299,15 +370,15 @@ export default function AdminDrivers() {
         queryClient.invalidateQueries({ queryKey: ['/api/drivers', selectedDriver.id, 'transactions'] });
       }
       toast({
-        title: "تم السحب",
+        title: "✅ تم السحب",
         description: "تم سحب المبلغ بنجاح",
       });
     },
     onError: (error: any) => {
       console.error('Error processing withdrawal:', error);
       toast({
-        title: "خطأ",
-        description: error.message || "فشل عملية السحب",
+        title: "❌ خطأ في السحب",
+        description: error.message || "حدث خطأ أثناء عملية السحب",
         variant: "destructive",
       });
     },
@@ -321,7 +392,7 @@ export default function AdminDrivers() {
       currentLocation: '',
       isAvailable: true,
       isActive: true,
-      commissionRate: '70',
+      commissionRate: '70.00',
     });
     setEditingDriver(null);
   };
@@ -344,7 +415,7 @@ export default function AdminDrivers() {
       currentLocation: driver.currentLocation || '',
       isAvailable: driver.isAvailable,
       isActive: driver.isActive,
-      commissionRate: formatNumberField(driver.commissionRate) || '70',
+      commissionRate: formatDecimalField(driver.commissionRate),
       vehicleType: driver.vehicleType || '',
       vehicleNumber: driver.vehicleNumber || '',
       email: driver.email || '',
@@ -363,7 +434,7 @@ export default function AdminDrivers() {
     // التحقق من البيانات
     if (!formData.name.trim()) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال اسم السائق",
         variant: "destructive",
       });
@@ -372,19 +443,19 @@ export default function AdminDrivers() {
 
     if (!formData.phone.trim()) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال رقم الهاتف",
         variant: "destructive",
       });
       return;
     }
 
-    // التحقق من صحة رقم الهاتف (أساسي)
-    const phoneRegex = /^[\+]?[0-9]{10,15}$/;
-    if (!phoneRegex.test(formData.phone.replace(/\D/g, ''))) {
+    // التحقق من صحة رقم الهاتف
+    const cleanedPhone = cleanPhoneNumber(formData.phone);
+    if (cleanedPhone.length < 10 || cleanedPhone.length > 15) {
       toast({
-        title: "خطأ",
-        description: "يرجى إدخال رقم هاتف صحيح",
+        title: "❌ خطأ",
+        description: "يرجى إدخال رقم هاتف صحيح (10-15 رقم)",
         variant: "destructive",
       });
       return;
@@ -394,7 +465,7 @@ export default function AdminDrivers() {
     const commissionRate = parseFloat(formData.commissionRate);
     if (isNaN(commissionRate) || commissionRate < 0 || commissionRate > 100) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال نسبة عمولة صحيحة بين 0 و 100",
         variant: "destructive",
       });
@@ -404,23 +475,17 @@ export default function AdminDrivers() {
     // التحقق من كلمة المرور للسائق الجديد
     if (!editingDriver && !formData.password?.trim()) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال كلمة المرور للسائق الجديد",
         variant: "destructive",
       });
       return;
     }
 
-    // إعداد البيانات للإرسال
-    const submitData: any = { ...formData };
-    
-    // إزالة كلمة المرور إذا كانت فارغة عند التعديل
-    if (editingDriver && !submitData.password) {
-      delete submitData.password;
-    }
-
-    // التحويل إلى النوع المطلوب
-    submitData.commissionRate = formData.commissionRate;
+    // تنظيف البيانات قبل الإرسال
+    const submitData = { ...formData };
+    submitData.phone = cleanedPhone;
+    submitData.commissionRate = formatDecimalField(submitData.commissionRate);
 
     if (editingDriver) {
       updateDriverMutation.mutate({ id: editingDriver.id, data: submitData });
@@ -434,8 +499,8 @@ export default function AdminDrivers() {
     
     if (!transactionData.amount || parseFloat(transactionData.amount) <= 0) {
       toast({
-        title: "خطأ",
-        description: "يرجى إدخال مبلغ صحيح",
+        title: "❌ خطأ",
+        description: "يرجى إدخال مبلغ صحيح أكبر من صفر",
         variant: "destructive",
       });
       return;
@@ -443,7 +508,7 @@ export default function AdminDrivers() {
 
     if (!transactionData.description.trim()) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال وصف للمعاملة",
         variant: "destructive",
       });
@@ -458,7 +523,7 @@ export default function AdminDrivers() {
     
     if (!commissionData.orderId.trim()) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال رقم الطلب",
         variant: "destructive",
       });
@@ -467,7 +532,7 @@ export default function AdminDrivers() {
 
     if (!commissionData.orderAmount || parseFloat(commissionData.orderAmount) <= 0) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال مبلغ الطلب",
         variant: "destructive",
       });
@@ -476,7 +541,7 @@ export default function AdminDrivers() {
 
     if (!commissionData.commissionRate || parseFloat(commissionData.commissionRate) <= 0) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "يرجى إدخال نسبة العمولة",
         variant: "destructive",
       });
@@ -489,7 +554,7 @@ export default function AdminDrivers() {
   const handleWithdrawal = () => {
     if (!driverBalance || driverBalance.availableBalance <= 0) {
       toast({
-        title: "خطأ",
+        title: "❌ خطأ",
         description: "لا يوجد رصيد متاح للسحب",
         variant: "destructive",
       });
@@ -506,7 +571,6 @@ export default function AdminDrivers() {
     });
   };
 
-  // دوال التمرير
   const scrollToTop = () => {
     mainContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -536,7 +600,6 @@ export default function AdminDrivers() {
     return labels[type] || type;
   };
 
-  // دالة لتحويل الأرباح إلى صيغة قابلة للعرض
   const getDriverEarnings = (driver: DriverResponse) => {
     const earnings = driver.totalEarnings || 0;
     if (typeof earnings === 'string') {
@@ -624,7 +687,7 @@ export default function AdminDrivers() {
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <Label htmlFor="name">الاسم الكامل</Label>
+                    <Label htmlFor="name">الاسم الكامل *</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -636,13 +699,13 @@ export default function AdminDrivers() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone">رقم الهاتف</Label>
+                    <Label htmlFor="phone">رقم الهاتف *</Label>
                     <Input
                       id="phone"
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                      placeholder="+967-771234567"
+                      placeholder="مثال: 771234567"
                       required
                       data-testid="input-driver-phone"
                     />
@@ -650,7 +713,7 @@ export default function AdminDrivers() {
 
                   <div>
                     <Label htmlFor="password">
-                      كلمة المرور {editingDriver && "(اتركها فارغة للاحتفاظ بالحالية)"}
+                      كلمة المرور {editingDriver ? "(اختياري)" : "*"}
                     </Label>
                     <Input
                       id="password"
@@ -661,13 +724,18 @@ export default function AdminDrivers() {
                       required={!editingDriver}
                       data-testid="input-driver-password"
                     />
+                    {editingDriver && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        اتركها فارغة للاحتفاظ بكلمة المرور الحالية
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="commissionRate">نسبة العمولة (%)</Label>
+                    <Label htmlFor="commissionRate">نسبة العمولة (%) *</Label>
                     <Input
                       id="commissionRate"
-                      type="text" // استخدام text بدلاً من number لتجنب المشاكل
+                      type="text"
                       inputMode="decimal"
                       value={formData.commissionRate}
                       onChange={(e) => {
@@ -677,13 +745,23 @@ export default function AdminDrivers() {
                           setFormData(prev => ({ ...prev, commissionRate: value }));
                         }
                       }}
-                      placeholder="70"
+                      placeholder="70.00"
                       required
                       data-testid="input-driver-commission"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
                       النسبة المئوية التي يحصل عليها السائق من كل طلب (0-100)
                     </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="currentLocation">الموقع الحالي (اختياري)</Label>
+                    <Input
+                      id="currentLocation"
+                      value={formData.currentLocation}
+                      onChange={(e) => setFormData(prev => ({ ...prev, currentLocation: e.target.value }))}
+                      placeholder="الموقع الحالي للسائق"
+                    />
                   </div>
 
                   <div>
@@ -746,8 +824,17 @@ export default function AdminDrivers() {
                       disabled={createDriverMutation.isPending || updateDriverMutation.isPending}
                       data-testid="button-save-driver"
                     >
-                      <Save className="h-4 w-4" />
-                      {editingDriver ? 'تحديث' : 'إضافة'}
+                      {createDriverMutation.isPending || updateDriverMutation.isPending ? (
+                        <>
+                          <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                          جاري الحفظ...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          {editingDriver ? 'تحديث' : 'إضافة'}
+                        </>
+                      )}
                     </Button>
                     <Button 
                       type="button" 
@@ -827,7 +914,7 @@ export default function AdminDrivers() {
                       <div className="flex items-center gap-2">
                         <Coins className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-sm text-foreground">
-                          نسبة العمولة: {formatNumberField(driver.commissionRate) || '70'}%
+                          نسبة العمولة: {formatDecimalField(driver.commissionRate)}%
                         </span>
                       </div>
                       
@@ -846,6 +933,7 @@ export default function AdminDrivers() {
                           checked={driver.isAvailable}
                           onCheckedChange={() => toggleDriverStatus(driver, 'isAvailable')}
                           data-testid={`switch-driver-available-${driver.id}`}
+                          disabled={updateDriverMutation.isPending}
                         />
                       </div>
                       <div className="text-center">
@@ -854,6 +942,7 @@ export default function AdminDrivers() {
                           checked={driver.isActive}
                           onCheckedChange={() => toggleDriverStatus(driver, 'isActive')}
                           data-testid={`switch-driver-active-${driver.id}`}
+                          disabled={updateDriverMutation.isPending}
                         />
                       </div>
                     </div>
@@ -901,8 +990,13 @@ export default function AdminDrivers() {
                             size="sm"
                             className="text-destructive hover:text-destructive flex-shrink-0 w-10 px-0"
                             data-testid={`button-delete-driver-${driver.id}`}
+                            disabled={deleteDriverMutation.isPending}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {deleteDriverMutation.isPending ? (
+                              <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-destructive"></span>
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
@@ -914,12 +1008,15 @@ export default function AdminDrivers() {
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                            <AlertDialogCancel disabled={deleteDriverMutation.isPending}>
+                              إلغاء
+                            </AlertDialogCancel>
                             <AlertDialogAction
                               onClick={() => deleteDriverMutation.mutate(driver.id)}
                               className="bg-destructive hover:bg-destructive/90"
+                              disabled={deleteDriverMutation.isPending}
                             >
-                              حذف
+                              {deleteDriverMutation.isPending ? 'جاري الحذف...' : 'حذف'}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
@@ -1043,7 +1140,6 @@ export default function AdminDrivers() {
                               value={transactionData.amount}
                               onChange={(e) => {
                                 const value = e.target.value;
-                                // التحقق من صحة الرقم
                                 if (/^\d*\.?\d*$/.test(value)) {
                                   setTransactionData(prev => ({ ...prev, amount: value }));
                                 }
@@ -1117,7 +1213,7 @@ export default function AdminDrivers() {
                               id="commissionRate"
                               type="text"
                               inputMode="decimal"
-                              value={commissionData.commissionRate || formatNumberField(selectedDriver?.commissionRate) || '70'}
+                              value={commissionData.commissionRate || formatDecimalField(selectedDriver?.commissionRate) || '70.00'}
                               onChange={(e) => {
                                 const value = e.target.value;
                                 if (/^\d*\.?\d*$/.test(value)) {
@@ -1161,7 +1257,6 @@ export default function AdminDrivers() {
                           disabled={!driverBalance || driverBalance.availableBalance <= 0 || processWithdrawalMutation.isPending}
                           className="gap-2"
                         >
-                          <ArrowUpDown className="h-4 w-4" />
                           {processWithdrawalMutation.isPending ? 'جاري السحب...' : 'سحب الرصيد'}
                         </Button>
                       </div>
