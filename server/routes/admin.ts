@@ -14,6 +14,10 @@ import {
   insertEmployeeSchema,
   insertAttendanceSchema,
   insertLeaveRequestSchema,
+  insertDriverBalanceSchema,
+  insertDriverTransactionSchema,
+  insertDriverCommissionSchema,
+  insertDriverWithdrawalSchema,
   adminUsers,
   // تم حذف adminSessions
   categories,
@@ -34,7 +38,11 @@ import {
   favorites,
   employees,
   attendance,
-  leaveRequests
+  leaveRequests,
+  driverBalances,
+  driverTransactions,
+  driverCommissions,
+  driverWithdrawals
 } from "@shared/schema";
 import { DatabaseStorage } from "../db";
 
@@ -129,7 +137,11 @@ const schema = {
   favorites,
   employees,
   attendance,
-  leaveRequests
+  leaveRequests,
+  driverBalances,
+  driverTransactions,
+  driverCommissions,
+  driverWithdrawals
 };
 
 // تم حذف middleware المصادقة - يمكن الوصول المباشر للبيانات بدون مصادقة
@@ -964,6 +976,315 @@ router.get("/drivers/:id/stats", async (req, res) => {
     res.json(stats);
   } catch (error) {
     console.error("خطأ في إحصائيات السائق:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// ==================== إدارة مالية السائقين ====================
+
+// جلب الملخص المالي لجميع السائقين
+router.get("/drivers/finances", async (req, res) => {
+  try {
+    const driversList = await storage.getDrivers();
+    const financialSummaries = await Promise.all(
+      driversList.map(async (driver) => {
+        const balance = await storage.getDriverBalance(driver.id);
+        return {
+          id: driver.id,
+          name: driver.name,
+          phone: driver.phone,
+          balance: balance || {
+            totalBalance: "0",
+            availableBalance: "0",
+            withdrawnAmount: "0",
+            pendingAmount: "0"
+          }
+        };
+      })
+    );
+    res.json(financialSummaries);
+  } catch (error) {
+    console.error("خطأ في جلب البيانات المالية للسائقين:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// جلب التفاصيل المالية لسائق محدد
+router.get("/drivers/:id/finances", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [balance, transactions, commissions, withdrawals] = await Promise.all([
+      storage.getDriverBalance(id),
+      storage.getDriverTransactions(id),
+      storage.getDriverCommissions(id),
+      storage.getDriverWithdrawals(id)
+    ]);
+
+    res.json({
+      balance: balance || {
+        totalBalance: "0",
+        availableBalance: "0",
+        withdrawnAmount: "0",
+        pendingAmount: "0"
+      },
+      transactions: transactions || [],
+      commissions: commissions || [],
+      withdrawals: withdrawals || []
+    });
+  } catch (error) {
+    console.error("خطأ في جلب التفاصيل المالية للسائق:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// إضافة معاملة يدوية (مكافأة أو خصم)
+router.post("/drivers/:id/transactions", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, type, description } = req.body;
+
+    if (!amount || !type) {
+      return res.status(400).json({ error: "المبلغ والنوع مطلوبان" });
+    }
+
+    const transaction = await storage.createDriverTransaction({
+      driverId: id,
+      amount: amount.toString(),
+      type,
+      description: description || "تسوية يدوية من الإدارة",
+      referenceId: "admin_manual"
+    });
+
+    res.status(201).json(transaction);
+  } catch (error) {
+    console.error("خطأ في إنشاء المعاملة:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// جلب طلبات السحب المعلقة
+router.get("/withdrawals/pending", async (req, res) => {
+  try {
+    const driversList = await storage.getDrivers();
+    const allWithdrawals = await Promise.all(
+      driversList.map(driver => storage.getDriverWithdrawals(driver.id))
+    );
+    
+    const pendingWithdrawals = allWithdrawals
+      .flat()
+      .filter(w => w.status === 'pending')
+      .map(w => {
+        const driver = driversList.find(d => d.id === w.driverId);
+        return {
+          ...w,
+          userName: driver?.name || 'سائق غير معروف',
+          userType: 'driver'
+        };
+      });
+
+    res.json(pendingWithdrawals);
+  } catch (error) {
+    console.error("خطأ في جلب طلبات السحب المعلقة:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// تحديث حالة طلب سحب
+router.put("/withdrawals/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: "الحالة مطلوبة" });
+    }
+
+    const updated = await storage.updateWithdrawal(id, {
+      status,
+      adminNotes,
+      processedAt: status === 'completed' ? new Date() : undefined
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "طلب السحب غير موجود" });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("خطأ في تحديث طلب السحب:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// الموافقة على طلب سحب
+router.post("/withdrawals/:id/approve", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await storage.updateWithdrawal(id, {
+      status: 'completed',
+      processedAt: new Date()
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "طلب السحب غير موجود" });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("خطأ في الموافقة على طلب السحب:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// رفض طلب سحب
+router.post("/withdrawals/:id/reject", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const updated = await storage.updateWithdrawal(id, {
+      status: 'rejected',
+      adminNotes: reason
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "طلب السحب غير موجود" });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("خطأ في رفض طلب السحب:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// تحديث حالة عمولة
+router.put("/commissions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: "الحالة مطلوبة" });
+    }
+
+    const updated = await storage.updateDriverCommission(id, { status });
+
+    if (!updated) {
+      return res.status(404).json({ error: "العمولة غير موجودة" });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("خطأ في تحديث العمولة:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// جلب المعاملات المالية الشاملة
+router.get("/transactions", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const fromDate = from ? new Date(from as string) : new Date(new Date().setDate(new Date().getDate() - 30));
+    const toDate = to ? new Date(to as string) : new Date();
+    
+    // جلب جميع السائقين أولاً لربط الأسماء
+    const driversList = await storage.getDrivers();
+    
+    // جلب معاملات جميع السائقين
+    const allTransactions = await Promise.all(
+      driversList.map(async (driver) => {
+        const txs = await storage.getDriverTransactions(driver.id);
+        return txs.map(tx => ({
+          ...tx,
+          userName: driver.name,
+          userType: 'driver',
+          fromUser: tx.type === 'withdrawal' ? driver.name : 'المنصة',
+          toUser: tx.type === 'withdrawal' ? 'البنك / محفظة السائق' : driver.name,
+          amount: parseFloat(tx.amount.toString()),
+          status: 'completed' // في نظامنا الحالي المعاملات المسجلة هي مكتملة
+        }));
+      })
+    );
+    
+    let flatTransactions = allTransactions.flat();
+    
+    // تصفية حسب التاريخ
+    flatTransactions = flatTransactions.filter(tx => {
+      const txDate = new Date(tx.createdAt);
+      return txDate >= fromDate && txDate <= toDate;
+    });
+    
+    // ترتيب تنازلي حسب التاريخ
+    flatTransactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    res.json(flatTransactions);
+  } catch (error) {
+    console.error("خطأ في جلب المعاملات:", error);
+    res.status(500).json({ error: "خطأ في الخادم" });
+  }
+});
+
+// جلب التقارير المالية
+router.get("/financial-reports", async (req, res) => {
+  try {
+    const { from, to, type } = req.query;
+    const fromDate = from ? new Date(from as string) : new Date(new Date().setDate(new Date().getDate() - 30));
+    const toDate = to ? new Date(to as string) : new Date();
+
+    const ordersList = await storage.getOrders();
+    const filteredOrders = ordersList.filter(o => {
+      const orderDate = new Date(o.createdAt);
+      return orderDate >= fromDate && orderDate <= toDate;
+    });
+    
+    const deliveredOrders = filteredOrders.filter(o => o.status === 'delivered');
+    
+    // حساب الإحصائيات الأساسية
+    const totalRevenue = deliveredOrders.reduce((sum, o) => sum + parseFloat(o.totalAmount || "0"), 0);
+    const deliveryFees = deliveredOrders.reduce((sum, o) => sum + parseFloat(o.deliveryFee || "0"), 0);
+    const platformFees = deliveredOrders.reduce((sum, o) => sum + parseFloat(o.companyEarnings || "0"), 0);
+    const restaurantPayments = deliveredOrders.reduce((sum, o) => sum + parseFloat(o.restaurantEarnings || "0"), 0);
+    
+    // جلب بيانات السائقين والسحوبات
+    const driversList = await storage.getDrivers();
+    const allWithdrawals = (await Promise.all(driversList.map(d => storage.getDriverWithdrawals(d.id)))).flat();
+    
+    const filteredWithdrawals = allWithdrawals.filter(w => {
+      const wDate = new Date(w.createdAt);
+      return wDate >= fromDate && wDate <= toDate;
+    });
+
+    const pendingWithdrawals = filteredWithdrawals.filter(w => w.status === 'pending');
+    const completedWithdrawals = filteredWithdrawals.filter(w => w.status === 'completed');
+    const driverPayments = completedWithdrawals.reduce((sum, w) => sum + parseFloat(w.amount.toString()), 0);
+    
+    // إنشاء التقرير
+    const report = {
+      id: "rep_" + Date.now(),
+      period: type === 'monthly' ? fromDate.toLocaleDateString('ar-YE', { month: 'long', year: 'numeric' }) : "الفترة المختارة",
+      totalRevenue,
+      totalExpenses: driverPayments + restaurantPayments,
+      netProfit: platformFees,
+      commissionEarned: platformFees,
+      deliveryFees,
+      platformFees,
+      restaurantPayments,
+      driverPayments,
+      withdrawalRequests: filteredWithdrawals.length,
+      pendingWithdrawals: pendingWithdrawals.length,
+      completedWithdrawals: completedWithdrawals.length,
+      taxAmount: totalRevenue * 0.05, // افتراضي 5%
+      transactionCount: deliveredOrders.length,
+      averageOrderValue: deliveredOrders.length > 0 ? totalRevenue / deliveredOrders.length : 0,
+      growthRate: 15.5, // قيمة افتراضية للنمو
+      status: "published",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    res.json([report]);
+  } catch (error) {
+    console.error("خطأ في جلب التقارير المالية:", error);
     res.status(500).json({ error: "خطأ في الخادم" });
   }
 });

@@ -133,6 +133,17 @@ export interface IStorage {
   searchMenuItems(query: string): Promise<MenuItem[]>;
   searchMenuItemsAdvanced(query: string, filters?: any): Promise<MenuItem[]>;
 
+  // Delivery Fee methods
+  getDeliveryFeeSettings(restaurantId?: string): Promise<any | undefined>;
+  createDeliveryFeeSettings(settings: any): Promise<any>;
+  updateDeliveryFeeSettings(id: string, settings: any): Promise<any>;
+
+  // Delivery Zones methods
+  getDeliveryZones(): Promise<any[]>;
+  createDeliveryZone(zone: any): Promise<any>;
+  updateDeliveryZone(id: string, zone: any): Promise<any>;
+  deleteDeliveryZone(id: string): Promise<boolean>;
+
   // ==================== دوال جديدة للرصيد والعمولات ====================
   
   // إدارة أرصدة السائقين
@@ -198,6 +209,8 @@ export class MemStorage implements IStorage {
   private driverTransactions: Map<string, DriverTransaction>;
   private driverCommissions: Map<string, DriverCommission>;
   private driverWithdrawals: Map<string, DriverWithdrawal>;
+  private deliveryFeeSettingsMap: Map<string, any>;
+  private deliveryZonesMap: Map<string, any>;
   private employeesMap: Map<string, Employee>;
   private attendanceMap: Map<string, Attendance>;
   private leaveRequestsMap: Map<string, LeaveRequest>;
@@ -229,6 +242,8 @@ export class MemStorage implements IStorage {
     this.driverTransactions = new Map();
     this.driverCommissions = new Map();
     this.driverWithdrawals = new Map();
+    this.deliveryFeeSettingsMap = new Map();
+    this.deliveryZonesMap = new Map();
     this.employeesMap = new Map();
     this.attendanceMap = new Map();
     this.leaveRequestsMap = new Map();
@@ -1435,6 +1450,277 @@ export class MemStorage implements IStorage {
     }
     
     return items;
+  }
+
+  // Delivery Fee methods
+  async getDeliveryFeeSettings(restaurantId?: string): Promise<any | undefined> {
+    if (restaurantId) {
+      return Array.from(this.deliveryFeeSettingsMap.values())
+        .find(s => s.restaurantId === restaurantId && s.isActive !== false);
+    }
+    return Array.from(this.deliveryFeeSettingsMap.values())
+      .find(s => !s.restaurantId && s.isActive !== false);
+  }
+
+  async createDeliveryFeeSettings(settings: any): Promise<any> {
+    const id = randomUUID();
+    const newSettings = { ...settings, id, createdAt: new Date(), updatedAt: new Date(), isActive: true };
+    this.deliveryFeeSettingsMap.set(id, newSettings);
+    return newSettings;
+  }
+
+  async updateDeliveryFeeSettings(id: string, settings: any): Promise<any> {
+    const existing = this.deliveryFeeSettingsMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...settings, updatedAt: new Date() };
+    this.deliveryFeeSettingsMap.set(id, updated);
+    return updated;
+  }
+
+  // Delivery Zones methods
+  async getDeliveryZones(): Promise<any[]> {
+    return Array.from(this.deliveryZonesMap.values()).filter(z => z.isActive !== false);
+  }
+
+  async createDeliveryZone(zone: any): Promise<any> {
+    const id = randomUUID();
+    const newZone = { ...zone, id, createdAt: new Date(), updatedAt: new Date(), isActive: true };
+    this.deliveryZonesMap.set(id, newZone);
+    return newZone;
+  }
+
+  async updateDeliveryZone(id: string, zone: any): Promise<any> {
+    const existing = this.deliveryZonesMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...zone, updatedAt: new Date() };
+    this.deliveryZonesMap.set(id, updated);
+    return updated;
+  }
+
+  async deleteDeliveryZone(id: string): Promise<boolean> {
+    const existing = this.deliveryZonesMap.get(id);
+    if (!existing) return false;
+    this.deliveryZonesMap.set(id, { ...existing, isActive: false });
+    return true;
+  }
+
+  // ==================== دوال إدارة أرصدة السائقين ====================
+
+  async getDriverBalance(driverId: string): Promise<DriverBalance | null> {
+    return this.driverBalances.get(driverId) || null;
+  }
+
+  async createDriverBalance(data: InsertDriverBalance): Promise<DriverBalance> {
+    const id = randomUUID();
+    const balance: DriverBalance = {
+      ...data,
+      id,
+      totalBalance: data.totalBalance || "0",
+      availableBalance: data.availableBalance || "0",
+      withdrawnAmount: data.withdrawnAmount || "0",
+      pendingAmount: data.pendingAmount || "0",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.driverBalances.set(driverId, balance); // Use driverId as key for easy lookup
+    return balance;
+  }
+
+  async updateDriverBalance(driverId: string, data: { amount: number; type: string }): Promise<DriverBalance> {
+    const existingBalance = await this.getDriverBalance(driverId);
+    
+    if (!existingBalance) {
+      return await this.createDriverBalance({
+        driverId,
+        totalBalance: data.type === 'deduction' || data.type === 'withdrawal' ? (-data.amount).toString() : data.amount.toString(),
+        availableBalance: data.type === 'deduction' || data.type === 'withdrawal' ? (-data.amount).toString() : data.amount.toString(),
+        withdrawnAmount: data.type === 'withdrawal' ? data.amount.toString() : "0",
+        pendingAmount: "0"
+      });
+    }
+
+    const currentTotal = parseFloat(existingBalance.totalBalance);
+    const currentAvailable = parseFloat(existingBalance.availableBalance);
+    const currentWithdrawn = parseFloat(existingBalance.withdrawnAmount);
+
+    let newTotal = currentTotal;
+    let newAvailable = currentAvailable;
+    let newWithdrawn = currentWithdrawn;
+
+    if (data.type === 'commission' || data.type === 'salary' || data.type === 'bonus') {
+      newTotal += data.amount;
+      newAvailable += data.amount;
+    } else if (data.type === 'deduction') {
+      newTotal -= data.amount;
+      newAvailable -= data.amount;
+    } else if (data.type === 'withdrawal') {
+      newAvailable -= data.amount;
+      newWithdrawn += data.amount;
+    }
+
+    const updated: DriverBalance = {
+      ...existingBalance,
+      totalBalance: newTotal.toString(),
+      availableBalance: newAvailable.toString(),
+      withdrawnAmount: newWithdrawn.toString(),
+      updatedAt: new Date()
+    };
+
+    this.driverBalances.set(driverId, updated);
+    return updated;
+  }
+
+  // ==================== معاملات السائقين ====================
+
+  async createDriverTransaction(data: Omit<DriverTransaction, 'id' | 'createdAt' | 'balanceBefore' | 'balanceAfter'>): Promise<DriverTransaction> {
+    const balance = await this.getDriverBalance(data.driverId);
+    const balanceBefore = balance ? parseFloat(balance.availableBalance) : 0;
+    
+    await this.updateDriverBalance(data.driverId, { 
+      amount: parseFloat(data.amount.toString()), 
+      type: data.type 
+    });
+    
+    const newBalance = await this.getDriverBalance(data.driverId);
+    const balanceAfter = newBalance ? parseFloat(newBalance.availableBalance) : balanceBefore;
+
+    const id = randomUUID();
+    const transaction: DriverTransaction = {
+      ...data,
+      id,
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: balanceAfter.toString(),
+      createdAt: new Date()
+    };
+
+    this.driverTransactions.set(id, transaction);
+    return transaction;
+  }
+
+  async getDriverTransactions(driverId: string): Promise<DriverTransaction[]> {
+    return Array.from(this.driverTransactions.values())
+      .filter(t => t.driverId === driverId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getDriverTransactionsByType(driverId: string, type: string): Promise<DriverTransaction[]> {
+    return Array.from(this.driverTransactions.values())
+      .filter(t => t.driverId === driverId && t.type === type)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  // ==================== عمولات السائقين ====================
+
+  async createDriverCommission(data: Omit<DriverCommission, 'id' | 'createdAt'>): Promise<DriverCommission> {
+    const id = randomUUID();
+    const commission: DriverCommission = {
+      ...data,
+      id,
+      createdAt: new Date()
+    };
+    
+    this.driverCommissions.set(id, commission);
+    
+    if (data.status === 'approved') {
+      await this.createDriverTransaction({
+        driverId: data.driverId,
+        type: 'commission',
+        amount: data.commissionAmount,
+        description: `عمولة طلب رقم: ${data.orderId}`,
+        referenceId: data.orderId
+      });
+    }
+
+    return commission;
+  }
+
+  async getDriverCommissions(driverId: string): Promise<DriverCommission[]> {
+    return Array.from(this.driverCommissions.values())
+      .filter(c => c.driverId === driverId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getDriverCommissionById(id: string): Promise<DriverCommission | null> {
+    return this.driverCommissions.get(id) || null;
+  }
+
+  async updateDriverCommission(id: string, data: Partial<DriverCommission>): Promise<DriverCommission | null> {
+    const existing = this.driverCommissions.get(id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data };
+    this.driverCommissions.set(id, updated);
+
+    if (data.status === 'approved' && existing.status !== 'approved') {
+      await this.createDriverTransaction({
+        driverId: updated.driverId,
+        type: 'commission',
+        amount: updated.commissionAmount,
+        description: `عمولة طلب رقم: ${updated.orderId}`,
+        referenceId: updated.orderId
+      });
+    }
+
+    return updated;
+  }
+
+  // ==================== سحوبات السائقين ====================
+
+  async createDriverWithdrawal(data: Omit<DriverWithdrawal, 'id' | 'createdAt'>): Promise<DriverWithdrawal> {
+    const id = randomUUID();
+    const withdrawal: DriverWithdrawal = {
+      ...data,
+      id,
+      createdAt: new Date()
+    };
+    this.driverWithdrawals.set(id, withdrawal);
+    return withdrawal;
+  }
+
+  async getDriverWithdrawals(driverId: string): Promise<DriverWithdrawal[]> {
+    return Array.from(this.driverWithdrawals.values())
+      .filter(w => w.driverId === driverId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getDriverWithdrawalById(id: string): Promise<DriverWithdrawal | null> {
+    return this.driverWithdrawals.get(id) || null;
+  }
+
+  async updateWithdrawal(id: string, data: Partial<DriverWithdrawal>): Promise<DriverWithdrawal | null> {
+    const existing = this.driverWithdrawals.get(id);
+    if (!existing) return null;
+
+    const updated = { 
+      ...existing, 
+      ...data, 
+      processedAt: data.status === 'completed' ? new Date() : existing.processedAt 
+    };
+    this.driverWithdrawals.set(id, updated);
+
+    if (data.status === 'completed' && existing.status !== 'completed') {
+      await this.createDriverTransaction({
+        driverId: updated.driverId,
+        type: 'withdrawal',
+        amount: updated.amount,
+        description: `سحب رصيد مكتمل`,
+        referenceId: updated.id
+      });
+    }
+
+    return updated;
+  }
+
+  async updateOrderCommission(id: string, data: { commissionRate: number; commissionAmount: string; commissionProcessed: boolean }): Promise<Order | undefined> {
+    const order = this.orders.get(id);
+    if (!order) return undefined;
+    
+    const updated = {
+      ...order,
+      driverEarnings: data.commissionAmount,
+    };
+    this.orders.set(id, updated);
+    return updated;
   }
 
   // Order tracking methods

@@ -5,7 +5,9 @@ import {
   adminUsers, categories, restaurantSections, restaurants, 
   menuItems, users, customers, userAddresses, orders, specialOffers, 
   notifications, ratings, systemSettingsTable as systemSettings, drivers, orderTracking,
-  cart, favorites, employees, attendance, leaveRequests,
+  cart, favorites, employees, attendance, leaveRequests, driverWallets, driverEarningsTable,
+  driverBalances, driverTransactions, driverCommissions, driverWithdrawals,
+  deliveryFeeSettings, deliveryZones, financialReports,
   type AdminUser, type InsertAdminUser,
   type Category, type InsertCategory,
   type Restaurant, type InsertRestaurant,
@@ -23,7 +25,11 @@ import {
   type Favorites, type InsertFavorites,
   type Employee, type InsertEmployee,
   type Attendance, type InsertAttendance,
-  type LeaveRequest, type InsertLeaveRequest
+  type LeaveRequest, type InsertLeaveRequest,
+  type DriverBalance, type InsertDriverBalance,
+  type DriverTransaction, type InsertDriverTransaction,
+  type DriverCommission, type InsertDriverCommission,
+  type DriverWithdrawal, type InsertDriverWithdrawal
 } from "@shared/schema";
 import { IStorage } from "./storage";
 import { eq, and, desc, sql, or, like, asc, inArray } from "drizzle-orm";
@@ -1415,6 +1421,208 @@ async getNotifications(recipientType?: string, recipientId?: string, unread?: bo
     const [updated] = await this.db.update(leaveRequests)
       .set(request)
       .where(eq(leaveRequests.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ==================== دوال إدارة أرصدة السائقين ====================
+
+  async getDriverBalance(driverId: string): Promise<DriverBalance | null> {
+    const [balance] = await this.db.select().from(driverBalances).where(eq(driverBalances.driverId, driverId));
+    return balance || null;
+  }
+
+  async createDriverBalance(data: InsertDriverBalance): Promise<DriverBalance> {
+    const [balance] = await this.db.insert(driverBalances).values(data).returning();
+    return balance;
+  }
+
+  async updateDriverBalance(driverId: string, data: { amount: number; type: string }): Promise<DriverBalance> {
+    const existingBalance = await this.getDriverBalance(driverId);
+    
+    if (!existingBalance) {
+      // إذا لم يكن هناك رصيد، قم بإنشائه
+      return await this.createDriverBalance({
+        driverId,
+        totalBalance: data.type === 'deduction' || data.type === 'withdrawal' ? (-data.amount).toString() : data.amount.toString(),
+        availableBalance: data.type === 'deduction' || data.type === 'withdrawal' ? (-data.amount).toString() : data.amount.toString(),
+        withdrawnAmount: data.type === 'withdrawal' ? data.amount.toString() : "0",
+        pendingAmount: "0"
+      });
+    }
+
+    const currentTotal = parseFloat(existingBalance.totalBalance);
+    const currentAvailable = parseFloat(existingBalance.availableBalance);
+    const currentWithdrawn = parseFloat(existingBalance.withdrawnAmount);
+
+    let newTotal = currentTotal;
+    let newAvailable = currentAvailable;
+    let newWithdrawn = currentWithdrawn;
+
+    if (data.type === 'commission' || data.type === 'salary' || data.type === 'bonus') {
+      newTotal += data.amount;
+      newAvailable += data.amount;
+    } else if (data.type === 'deduction') {
+      newTotal -= data.amount;
+      newAvailable -= data.amount;
+    } else if (data.type === 'withdrawal') {
+      newAvailable -= data.amount;
+      newWithdrawn += data.amount;
+    }
+
+    const [updated] = await this.db.update(driverBalances)
+      .set({
+        totalBalance: newTotal.toString(),
+        availableBalance: newAvailable.toString(),
+        withdrawnAmount: newWithdrawn.toString(),
+        updatedAt: new Date()
+      })
+      .where(eq(driverBalances.driverId, driverId))
+      .returning();
+
+    return updated;
+  }
+
+  // ==================== معاملات السائقين ====================
+
+  async createDriverTransaction(data: Omit<DriverTransaction, 'id' | 'createdAt' | 'balanceBefore' | 'balanceAfter'>): Promise<DriverTransaction> {
+    const balance = await this.getDriverBalance(data.driverId);
+    const balanceBefore = balance ? parseFloat(balance.availableBalance) : 0;
+    
+    // تحديث الرصيد أولاً
+    await this.updateDriverBalance(data.driverId, { 
+      amount: parseFloat(data.amount.toString()), 
+      type: data.type 
+    });
+    
+    const newBalance = await this.getDriverBalance(data.driverId);
+    const balanceAfter = newBalance ? parseFloat(newBalance.availableBalance) : balanceBefore;
+
+    const [transaction] = await this.db.insert(driverTransactions).values({
+      ...data,
+      balanceBefore: balanceBefore.toString(),
+      balanceAfter: balanceAfter.toString()
+    }).returning();
+
+    return transaction;
+  }
+
+  async getDriverTransactions(driverId: string): Promise<DriverTransaction[]> {
+    return await this.db.select().from(driverTransactions)
+      .where(eq(driverTransactions.driverId, driverId))
+      .orderBy(desc(driverTransactions.createdAt));
+  }
+
+  async getDriverTransactionsByType(driverId: string, type: string): Promise<DriverTransaction[]> {
+    return await this.db.select().from(driverTransactions)
+      .where(and(
+        eq(driverTransactions.driverId, driverId),
+        eq(driverTransactions.type, type)
+      ))
+      .orderBy(desc(driverTransactions.createdAt));
+  }
+
+  // ==================== عمولات السائقين ====================
+
+  async createDriverCommission(data: Omit<DriverCommission, 'id' | 'createdAt'>): Promise<DriverCommission> {
+    const [commission] = await this.db.insert(driverCommissions).values(data).returning();
+    
+    // إضافة معاملة ورصيد عند إنشاء عمولة (إذا كانت الحالة معتمدة)
+    if (data.status === 'approved') {
+      await this.createDriverTransaction({
+        driverId: data.driverId,
+        type: 'commission',
+        amount: data.commissionAmount,
+        description: `عمولة طلب رقم: ${data.orderId}`,
+        referenceId: data.orderId
+      });
+    }
+
+    return commission;
+  }
+
+  async getDriverCommissions(driverId: string): Promise<DriverCommission[]> {
+    return await this.db.select().from(driverCommissions)
+      .where(eq(driverCommissions.driverId, driverId))
+      .orderBy(desc(driverCommissions.createdAt));
+  }
+
+  async getDriverCommissionById(id: string): Promise<DriverCommission | null> {
+    const [commission] = await this.db.select().from(driverCommissions).where(eq(driverCommissions.id, id));
+    return commission || null;
+  }
+
+  async updateDriverCommission(id: string, data: Partial<DriverCommission>): Promise<DriverCommission | null> {
+    const existing = await this.getDriverCommissionById(id);
+    if (!existing) return null;
+
+    const [updated] = await this.db.update(driverCommissions)
+      .set(data)
+      .where(eq(driverCommissions.id, id))
+      .returning();
+
+    // إذا تغيرت الحالة إلى approved، أضف المعاملة
+    if (data.status === 'approved' && existing.status !== 'approved') {
+      await this.createDriverTransaction({
+        driverId: updated.driverId,
+        type: 'commission',
+        amount: updated.commissionAmount,
+        description: `عمولة طلب رقم: ${updated.orderId}`,
+        referenceId: updated.orderId
+      });
+    }
+
+    return updated;
+  }
+
+  // ==================== سحوبات السائقين ====================
+
+  async createDriverWithdrawal(data: Omit<DriverWithdrawal, 'id' | 'createdAt'>): Promise<DriverWithdrawal> {
+    const [withdrawal] = await this.db.insert(driverWithdrawals).values(data).returning();
+    return withdrawal;
+  }
+
+  async getDriverWithdrawals(driverId: string): Promise<DriverWithdrawal[]> {
+    return await this.db.select().from(driverWithdrawals)
+      .where(eq(driverWithdrawals.driverId, driverId))
+      .orderBy(desc(driverWithdrawals.createdAt));
+  }
+
+  async getDriverWithdrawalById(id: string): Promise<DriverWithdrawal | null> {
+    const [withdrawal] = await this.db.select().from(driverWithdrawals).where(eq(driverWithdrawals.id, id));
+    return withdrawal || null;
+  }
+
+  async updateWithdrawal(id: string, data: Partial<DriverWithdrawal>): Promise<DriverWithdrawal | null> {
+    const existing = await this.getDriverWithdrawalById(id);
+    if (!existing) return null;
+
+    const [updated] = await this.db.update(driverWithdrawals)
+      .set({ ...data, processedAt: data.status === 'completed' ? new Date() : undefined })
+      .where(eq(driverWithdrawals.id, id))
+      .returning();
+
+    // إذا اكتمل السحب، أضف معاملة خصم من الرصيد المتاح
+    if (data.status === 'completed' && existing.status !== 'completed') {
+      await this.createDriverTransaction({
+        driverId: updated.driverId,
+        type: 'withdrawal',
+        amount: updated.amount,
+        description: `سحب رصيد مكتمل`,
+        referenceId: updated.id
+      });
+    }
+
+    return updated;
+  }
+
+  async updateOrderCommission(id: string, data: { commissionRate: number; commissionAmount: string; commissionProcessed: boolean }): Promise<Order | undefined> {
+    const [updated] = await this.db.update(orders)
+      .set({
+        driverEarnings: data.commissionAmount,
+        // هنا نفترض أن الحقول موجودة في الطلب أو نحتاج لإضافتها
+      })
+      .where(eq(orders.id, id))
       .returning();
     return updated;
   }

@@ -99,9 +99,13 @@ export const drivers = pgTable("drivers", {
   commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).default("70"), // نسبة السائق من رسوم التوصيل
   paymentMode: varchar("payment_mode", { length: 20 }).default("commission").notNull(), // commission or salary
   salaryAmount: decimal("salary_amount", { precision: 10, scale: 2 }).default("0"), // الراتب الشهري إن وجد
+  email: varchar("email", { length: 100 }),
+  vehicleType: varchar("vehicle_type", { length: 50 }),
+  vehicleNumber: varchar("vehicle_number", { length: 50 }),
   currentLocation: varchar("current_location", { length: 200 }),
   earnings: decimal("earnings", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Orders table
@@ -322,6 +326,55 @@ export const driverWallets = pgTable("driver_wallets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Driver balance table (Admin interface expects these specific fields)
+export const driverBalances = pgTable("driver_balances", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driverId: uuid("driver_id").references(() => drivers.id).notNull().unique(),
+  totalBalance: decimal("total_balance", { precision: 10, scale: 2 }).default("0").notNull(),
+  availableBalance: decimal("available_balance", { precision: 10, scale: 2 }).default("0").notNull(),
+  withdrawnAmount: decimal("withdrawn_amount", { precision: 10, scale: 2 }).default("0").notNull(),
+  pendingAmount: decimal("pending_amount", { precision: 10, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Driver transactions table
+export const driverTransactions = pgTable("driver_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driverId: uuid("driver_id").references(() => drivers.id).notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // commission, salary, bonus, deduction, withdrawal
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  description: text("description"),
+  balanceBefore: decimal("balance_before", { precision: 10, scale: 2 }).default("0"),
+  balanceAfter: decimal("balance_after", { precision: 10, scale: 2 }).default("0"),
+  referenceId: varchar("reference_id", { length: 100 }), // orderId or withdrawalId
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Driver commissions table
+export const driverCommissions = pgTable("driver_commissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driverId: uuid("driver_id").references(() => drivers.id).notNull(),
+  orderId: uuid("order_id").references(() => orders.id).notNull(),
+  orderAmount: decimal("order_amount", { precision: 10, scale: 2 }).notNull(),
+  commissionRate: decimal("commission_rate", { precision: 5, scale: 2 }).notNull(),
+  commissionAmount: decimal("commission_amount", { precision: 10, scale: 2 }).notNull(),
+  status: varchar("status", { length: 50 }).default("pending").notNull(), // pending, approved, paid
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Driver withdrawals table
+export const driverWithdrawals = pgTable("driver_withdrawals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  driverId: uuid("driver_id").references(() => drivers.id).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  status: varchar("status", { length: 50 }).default("pending").notNull(), // pending, approved, rejected, completed
+  bankDetails: text("bank_details"),
+  adminNotes: text("admin_notes"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const restaurantWallets = pgTable("restaurant_wallets", {
   id: uuid("id").primaryKey().defaultRandom(),
   restaurantId: uuid("restaurant_id").references(() => restaurants.id).notNull().unique(),
@@ -491,7 +544,11 @@ export const insertDriverSchema = createInsertSchema(drivers).partial({
   commissionRate: true,
   paymentMode: true,
   salaryAmount: true,
+  email: true,
+  vehicleType: true,
+  vehicleNumber: true,
   earnings: true,
+  updatedAt: true,
 });
 export const selectDriverSchema = createSelectSchema(drivers);
 export type Driver = z.infer<typeof selectDriverSchema>;
@@ -646,6 +703,48 @@ export const insertDriverWalletSchema = createInsertSchema(driverWallets).partia
 export const selectDriverWalletSchema = createSelectSchema(driverWallets);
 export type DriverWallet = z.infer<typeof selectDriverWalletSchema>;
 export type InsertDriverWallet = z.infer<typeof insertDriverWalletSchema>;
+
+export const insertDriverBalanceSchema = createInsertSchema(driverBalances).partial({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  totalBalance: true,
+  availableBalance: true,
+  withdrawnAmount: true,
+  pendingAmount: true,
+});
+export const selectDriverBalanceSchema = createSelectSchema(driverBalances);
+export type DriverBalance = z.infer<typeof selectDriverBalanceSchema>;
+export type InsertDriverBalance = z.infer<typeof insertDriverBalanceSchema>;
+
+export const insertDriverTransactionSchema = createInsertSchema(driverTransactions).partial({
+  id: true,
+  createdAt: true,
+  balanceBefore: true,
+  balanceAfter: true,
+});
+export const selectDriverTransactionSchema = createSelectSchema(driverTransactions);
+export type DriverTransaction = z.infer<typeof selectDriverTransactionSchema>;
+export type InsertDriverTransaction = z.infer<typeof insertDriverTransactionSchema>;
+
+export const insertDriverCommissionSchema = createInsertSchema(driverCommissions).partial({
+  id: true,
+  createdAt: true,
+  status: true,
+});
+export const selectDriverCommissionSchema = createSelectSchema(driverCommissions);
+export type DriverCommission = z.infer<typeof selectDriverCommissionSchema>;
+export type InsertDriverCommission = z.infer<typeof insertDriverCommissionSchema>;
+
+export const insertDriverWithdrawalSchema = createInsertSchema(driverWithdrawals).partial({
+  id: true,
+  createdAt: true,
+  status: true,
+  processedAt: true,
+});
+export const selectDriverWithdrawalSchema = createSelectSchema(driverWithdrawals);
+export type DriverWithdrawal = z.infer<typeof selectDriverWithdrawalSchema>;
+export type InsertDriverWithdrawal = z.infer<typeof insertDriverWithdrawalSchema>;
 
 export const insertRestaurantWalletSchema = createInsertSchema(restaurantWallets).partial({
   id: true,

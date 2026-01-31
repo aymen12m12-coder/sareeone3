@@ -21,7 +21,15 @@ export function registerAdvancedRoutes(app: express.Express) {
         return res.status(404).json({ error: "Driver not found" });
       }
 
-      const wallet = await advancedDb.getDriverWallet(driverId);
+      const balance = await dbStorage.getDriverBalance(driverId);
+      const wallet = balance ? {
+        id: balance.id,
+        driverId: balance.driverId,
+        balance: balance.availableBalance,
+        totalEarned: balance.totalBalance,
+        updatedAt: balance.updatedAt
+      } : null;
+      
       const earnings = await advancedDb.getDriverEarningsStats(driverId);
       const reviews = await advancedDb.getDriverReviews(driverId);
       const stats = await advancedDb.getDriverPerformanceStats(driverId);
@@ -43,10 +51,20 @@ export function registerAdvancedRoutes(app: express.Express) {
   app.get("/api/admin/drivers/stats", async (req, res) => {
     try {
       const drivers = await dbStorage.getDrivers();
+      const now = new Date();
+      const todayStart = new Date(now.setHours(0, 0, 0, 0));
+      const weekStart = new Date(new Date().setDate(now.getDate() - 7));
+      const monthStart = new Date(new Date().setDate(now.getDate() - 30));
+
       const stats = await Promise.all(
         drivers.map(async (driver) => {
           const performance = await advancedDb.getDriverPerformanceStats(driver.id);
-          const wallet = await advancedDb.getDriverWallet(driver.id);
+          const performanceToday = await advancedDb.getDriverPerformanceStats(driver.id, todayStart);
+          const performanceWeekly = await advancedDb.getDriverPerformanceStats(driver.id, weekStart);
+          const performanceMonthly = await advancedDb.getDriverPerformanceStats(driver.id, monthStart);
+          
+          const balance = await dbStorage.getDriverBalance(driver.id);
+          const withdrawals = await advancedDb.getWithdrawalRequests(driver.id, 'driver');
           const reviews = await advancedDb.getDriverReviews(driver.id);
           const avgRating = reviews.length > 0 
             ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
@@ -55,7 +73,7 @@ export function registerAdvancedRoutes(app: express.Express) {
           return {
             id: driver.id,
             name: driver.name,
-            email: "driver@example.com",
+            email: driver.email || `${driver.phone}@sareeone.com`,
             phone: driver.phone,
             status: driver.isActive ? "active" : "inactive",
             rating: avgRating,
@@ -63,20 +81,25 @@ export function registerAdvancedRoutes(app: express.Express) {
             completedOrders: performance.completedOrders,
             cancelledOrders: performance.totalOrders - performance.completedOrders,
             totalEarnings: performance.totalEarnings,
-            todayEarnings: 0,
-            weeklyEarnings: 0,
-            monthlyEarnings: 0,
+            todayEarnings: performanceToday.totalEarnings,
+            weeklyEarnings: performanceWeekly.totalEarnings,
+            monthlyEarnings: performanceMonthly.totalEarnings,
             avgRating: avgRating,
             joinDate: driver.createdAt.toISOString(),
-            lastActive: new Date().toISOString(),
+            lastActive: driver.updatedAt?.toISOString() || driver.createdAt.toISOString(),
             isVerified: true,
-            vehicleType: "دراجة نارية",
-            vehicleNumber: "12345",
-            walletBalance: parseFloat(wallet?.balance?.toString() || "0"),
-            withdrawalRequests: [],
+            vehicleType: driver.vehicleType || "دراجة نارية",
+            vehicleNumber: driver.vehicleNumber || "غير مسجل",
+            walletBalance: parseFloat(balance?.availableBalance?.toString() || "0"),
+            withdrawalRequests: withdrawals.map(w => ({
+              id: w.id,
+              amount: parseFloat(w.amount.toString()),
+              status: w.status,
+              createdAt: w.createdAt.toISOString()
+            })),
             performance: {
-              acceptanceRate: 95,
-              onTimeRate: 90,
+              acceptanceRate: performance.successRate,
+              onTimeRate: 90, // Placeholder
               customerSatisfaction: avgRating * 20
             },
             documents: []
@@ -97,14 +120,16 @@ export function registerAdvancedRoutes(app: express.Express) {
       const summaries = await Promise.all(
         drivers.map(async (driver) => {
           const stats = await advancedDb.getDriverPerformanceStats(driver.id);
-          const wallet = await advancedDb.getDriverWallet(driver.id);
+          const balance = await dbStorage.getDriverBalance(driver.id);
+          const wallet = balance ? {
+            balance: balance.availableBalance,
+            totalEarned: balance.totalBalance
+          } : { balance: 0, totalEarned: 0 };
+
           return {
             ...driver,
             stats,
-            wallet: {
-              balance: wallet?.balance || 0,
-              totalEarned: wallet?.totalEarned || 0
-            }
+            wallet
           };
         })
       );
@@ -249,8 +274,24 @@ export function registerAdvancedRoutes(app: express.Express) {
         return res.status(400).json({ error: "Invalid amount" });
       }
 
-      const updatedWallet = await advancedDb.addDriverWalletBalance(driverId, amount);
-      res.json(updatedWallet);
+      const updatedBalance = await dbStorage.updateDriverBalance(driverId, { 
+        amount, 
+        type: 'bonus' // Defaulting to bonus for manual add
+      });
+      
+      await dbStorage.createDriverTransaction({
+        driverId,
+        amount: amount.toString(),
+        type: 'bonus',
+        description: description || "إضافة يدوية للرصيد"
+      });
+
+      res.json({
+        id: updatedBalance.id,
+        driverId: updatedBalance.driverId,
+        balance: updatedBalance.availableBalance,
+        totalEarned: updatedBalance.totalBalance
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -260,20 +301,26 @@ export function registerAdvancedRoutes(app: express.Express) {
   app.get("/api/drivers/:driverId/wallet", async (req, res) => {
     try {
       const { driverId } = req.params;
-      const wallet = await advancedDb.getDriverWallet(driverId);
+      const balance = await dbStorage.getDriverBalance(driverId);
 
-      if (!wallet) {
-        return res.status(404).json({ error: "Wallet not found" });
+      if (!balance) {
+        return res.status(404).json({ error: "Balance not found" });
       }
 
-      res.json(wallet);
+      res.json({
+        id: balance.id,
+        driverId: balance.driverId,
+        balance: balance.availableBalance,
+        totalEarned: balance.totalBalance,
+        updatedAt: balance.updatedAt
+      });
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch wallet" });
+      res.status(500).json({ error: "Failed to fetch balance" });
     }
   });
 
   // ===================== WITHDRAWAL ROUTES =====================
-
+  
   // Create withdrawal request
   app.post("/api/withdrawal-requests", async (req, res) => {
     try {
@@ -285,9 +332,9 @@ export function registerAdvancedRoutes(app: express.Express) {
 
       // Check balance before creating request
       if (entityType === 'driver') {
-        const wallet = await advancedDb.getDriverWallet(entityId);
-        const balance = parseFloat(wallet?.balance?.toString() || "0");
-        if (balance < amount) {
+        const balance = await dbStorage.getDriverBalance(entityId);
+        const available = parseFloat(balance?.availableBalance?.toString() || "0");
+        if (available < amount) {
           return res.status(400).json({ error: "Insufficient balance" });
         }
       } else if (entityType === 'restaurant') {
@@ -326,10 +373,19 @@ export function registerAdvancedRoutes(app: express.Express) {
       
       // Update wallet balance
       if (request.entityType === 'driver') {
-        await advancedDb.deductDriverWalletBalance(
-          request.entityId,
-          parseFloat(request.amount.toString())
-        );
+        const amount = parseFloat(request.amount.toString());
+        await dbStorage.updateDriverBalance(request.entityId, {
+          amount,
+          type: 'withdrawal'
+        });
+        
+        await dbStorage.createDriverTransaction({
+          driverId: request.entityId,
+          amount: request.amount.toString(),
+          type: 'withdrawal',
+          description: `سحب نقدي معتمد (طلب رقم ${request.id})`,
+          referenceId: request.id
+        });
       } else if (request.entityType === 'restaurant') {
         await advancedDb.deductRestaurantWalletBalance(
           request.entityId,
@@ -361,45 +417,34 @@ export function registerAdvancedRoutes(app: express.Express) {
   app.get("/api/admin/withdrawal-requests/pending", async (req, res) => {
     try {
       const requests = await advancedDb.getPendingWithdrawalRequests();
-      res.json(requests);
+      
+      const enrichedRequests = await Promise.all(
+        requests.map(async (request) => {
+          let userName = "غير معروف";
+          if (request.entityType === 'driver') {
+            const driver = await dbStorage.getDriver(request.entityId);
+            userName = driver?.name || "سائق غير معروف";
+          } else if (request.entityType === 'restaurant') {
+            const restaurant = await dbStorage.getRestaurant(request.entityId);
+            userName = restaurant?.name || "مطعم غير معروف";
+          }
+          
+          return {
+            ...request,
+            userName,
+            userType: request.entityType,
+            userId: request.entityId,
+            requestedAt: request.createdAt,
+            method: 'bank_transfer', // Default for now
+            amount: parseFloat(request.amount.toString())
+          };
+        })
+      );
+      
+      res.json(enrichedRequests);
     } catch (error) {
+      console.error("Error fetching pending withdrawals:", error);
       res.status(500).json({ error: "Failed to fetch withdrawal requests" });
-    }
-  });
-
-  // ===================== FINANCIAL REPORTS ROUTES =====================
-  app.get("/api/admin/financial-reports", async (req, res) => {
-    try {
-      const { from, to, type } = req.query;
-      res.json([
-        {
-          id: "1",
-          period: "يناير 2026",
-          totalRevenue: 1234567,
-          totalExpenses: 988677,
-          netProfit: 245890,
-          commissionEarned: 123450,
-          status: "published"
-        }
-      ]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch financial reports" });
-    }
-  });
-
-  app.get("/api/admin/transactions", async (req, res) => {
-    try {
-      res.json([
-        {
-          id: "tx_1",
-          type: "commission",
-          amount: 500,
-          status: "completed",
-          createdAt: new Date().toISOString()
-        }
-      ]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch transactions" });
     }
   });
 
