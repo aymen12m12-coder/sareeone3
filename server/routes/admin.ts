@@ -55,7 +55,7 @@ function coerceRequestData(data: any) {
   const coerced = { ...data };
   
   // Convert decimal fields to strings (Zod expects strings for decimal fields)
-  ['minimumOrder', 'deliveryFee', 'perKmFee', 'latitude', 'longitude', 'discountAmount', 'rating', 'commissionRate', 'salary', 'hoursWorked'].forEach(field => {
+  ['minimumOrder', 'deliveryFee', 'perKmFee', 'latitude', 'longitude', 'discountAmount', 'rating', 'commissionRate', 'salary', 'hoursWorked', 'salaryAmount', 'earnings', 'price', 'originalPrice', 'amount', 'subtotal', 'total', 'totalAmount', 'distance', 'driverEarnings', 'restaurantEarnings', 'companyEarnings', 'totalBalance', 'availableBalance', 'withdrawnAmount', 'pendingAmount', 'balanceBefore', 'balanceAfter'].forEach(field => {
     if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
       coerced[field] = String(coerced[field]);
     } else {
@@ -64,7 +64,7 @@ function coerceRequestData(data: any) {
   });
   
   // Convert integer fields properly
-  ['reviewCount', 'discountPercent'].forEach(field => {
+  ['reviewCount', 'discountPercent', 'sortOrder', 'quantity'].forEach(field => {
     if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
       const parsed = parseInt(coerced[field]);
       coerced[field] = isNaN(parsed) ? undefined : parsed;
@@ -74,7 +74,7 @@ function coerceRequestData(data: any) {
   });
   
   // Properly parse boolean fields
-  ['isOpen', 'isActive', 'isFeatured', 'isNew', 'isTemporarilyClosed'].forEach(field => {
+  ['isOpen', 'isActive', 'isFeatured', 'isNew', 'isTemporarilyClosed', 'isAvailable', 'isSpecialOffer', 'isApproved', 'isRead'].forEach(field => {
     if (coerced[field] !== undefined && coerced[field] !== null) {
       const value = coerced[field];
       if (typeof value === 'string') {
@@ -239,12 +239,15 @@ router.get("/categories", async (req, res) => {
 
 router.post("/categories", async (req, res) => {
   try {
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من صحة البيانات مع الحقول المطلوبة
     const validatedData = insertCategorySchema.parse({
-      ...req.body,
+      ...coercedData,
       // التأكد من وجود الحقول المطلوبة
-      sortOrder: req.body.sortOrder || 0,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+      sortOrder: coercedData.sortOrder || 0,
+      isActive: coercedData.isActive !== undefined ? coercedData.isActive : true
     });
     
     const newCategory = await storage.createCategory(validatedData);
@@ -265,8 +268,11 @@ router.put("/categories/:id", async (req, res) => {
   try {
     const { id } = req.params;
     
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من صحة البيانات المحدثة (جزئي)
-    const validatedData = insertCategorySchema.partial().parse(req.body);
+    const validatedData = insertCategorySchema.partial().parse(coercedData);
     
     const updatedCategory = await storage.updateCategory(id, {
       ...validatedData, 
@@ -482,11 +488,14 @@ router.get("/restaurants/:restaurantId/menu", async (req, res) => {
 
 router.post("/menu-items", async (req, res) => {
   try {
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من صحة البيانات
     const validatedData = insertMenuItemSchema.parse({
-      ...req.body,
+      ...coercedData,
       // إضافة صورة افتراضية إذا لم تكن موجودة
-      image: req.body.image || "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg"
+      image: coercedData.image || "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg"
     });
     
     const newMenuItem = await storage.createMenuItem(validatedData);
@@ -507,8 +516,11 @@ router.put("/menu-items/:id", async (req, res) => {
   try {
     const { id } = req.params;
     
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من صحة البيانات المحدثة (جزئي)
-    const validatedData = insertMenuItemSchema.partial().parse(req.body);
+    const validatedData = insertMenuItemSchema.partial().parse(coercedData);
     
     const updatedMenuItem = await storage.updateMenuItem(id, validatedData);
     
@@ -853,8 +865,11 @@ router.post("/drivers", async (req, res) => {
   try {
     console.log("Driver creation request data:", req.body);
     
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من البيانات المطلوبة
-    if (!req.body.name || !req.body.phone || !req.body.password) {
+    if (!coercedData.name || !coercedData.phone || !coercedData.password) {
       return res.status(400).json({ 
         error: "البيانات المطلوبة ناقصة", 
         details: "الاسم ورقم الهاتف وكلمة المرور مطلوبة"
@@ -863,13 +878,13 @@ router.post("/drivers", async (req, res) => {
     
     // التحقق من صحة البيانات مع الحقول المطلوبة
     const driverData = {
-      ...req.body,
+      ...coercedData,
       // التأكد من وجود الحقول الافتراضية
-      isAvailable: req.body.isAvailable !== undefined ? req.body.isAvailable : true,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true,
-      earnings: req.body.earnings || "0",
+      isAvailable: coercedData.isAvailable !== undefined ? coercedData.isAvailable : true,
+      isActive: coercedData.isActive !== undefined ? coercedData.isActive : true,
+      earnings: coercedData.earnings || "0",
       userType: "driver",
-      currentLocation: req.body.currentLocation || null
+      currentLocation: coercedData.currentLocation || null
     };
     
     console.log("Processed driver data:", driverData);

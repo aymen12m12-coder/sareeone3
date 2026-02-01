@@ -137,15 +137,17 @@ export async function calculateDeliveryFee(
 
   // التحقق من وجود إحداثيات المطعم
   if (restaurantLocation.lat === 0 && restaurantLocation.lng === 0) {
-    // استخدام رسوم ثابتة إذا لم تكن هناك إحداثيات
+    // استخدام رسوم المطعم المخصصة أو الرسوم الأساسية من الإعدادات العامة إذا لم تكن هناك إحداثيات
+    const fallbackFee = restaurantBaseFee > 0 ? restaurantBaseFee : feeSettings.baseFee;
+    
     return {
-      fee: parseFloat(restaurant.deliveryFee || String(DEFAULT_BASE_FEE)),
+      fee: fallbackFee,
       distance: 0,
       estimatedTime: restaurant.deliveryTime || '30-45 دقيقة',
       feeBreakdown: {
-        baseFee: parseFloat(restaurant.deliveryFee || String(DEFAULT_BASE_FEE)),
+        baseFee: fallbackFee,
         distanceFee: 0,
-        totalBeforeLimit: parseFloat(restaurant.deliveryFee || String(DEFAULT_BASE_FEE))
+        totalBeforeLimit: fallbackFee
       },
       isFreeDelivery: false
     };
