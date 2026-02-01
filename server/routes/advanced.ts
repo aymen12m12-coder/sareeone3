@@ -2,6 +2,7 @@ import express from "express";
 import { AdvancedDatabaseStorage } from "../db-advanced";
 import { DatabaseStorage } from "../db";
 import { z } from "zod";
+import { coerceRequestData } from "../utils/coercion";
 
 const router = express.Router();
 
@@ -268,14 +269,15 @@ export function registerAdvancedRoutes(app: express.Express) {
   app.post("/api/drivers/:driverId/wallet/add-balance", async (req, res) => {
     try {
       const { driverId } = req.params;
-      const { amount, description } = req.body;
+      const coercedData = coerceRequestData(req.body);
+      const { amount, description } = coercedData;
 
-      if (!amount || amount <= 0) {
+      if (!amount || parseFloat(amount) <= 0) {
         return res.status(400).json({ error: "Invalid amount" });
       }
 
       const updatedBalance = await dbStorage.updateDriverBalance(driverId, { 
-        amount, 
+        amount: parseFloat(amount), 
         type: 'bonus' // Defaulting to bonus for manual add
       });
       
@@ -324,23 +326,26 @@ export function registerAdvancedRoutes(app: express.Express) {
   // Create withdrawal request
   app.post("/api/withdrawal-requests", async (req, res) => {
     try {
-      const { entityType, entityId, amount, accountNumber, bankName, accountHolder, requestedBy } = req.body;
+      const coercedData = coerceRequestData(req.body);
+      const { entityType, entityId, amount, accountNumber, bankName, accountHolder, requestedBy } = coercedData;
 
-      if (!amount || amount <= 0) {
+      if (!amount || parseFloat(amount) <= 0) {
         return res.status(400).json({ error: "Invalid amount" });
       }
+
+      const numericAmount = parseFloat(amount);
 
       // Check balance before creating request
       if (entityType === 'driver') {
         const balance = await dbStorage.getDriverBalance(entityId);
         const available = parseFloat(balance?.availableBalance?.toString() || "0");
-        if (available < amount) {
+        if (available < numericAmount) {
           return res.status(400).json({ error: "Insufficient balance" });
         }
       } else if (entityType === 'restaurant') {
         const wallet = await advancedDb.getRestaurantWallet(entityId);
         const balance = parseFloat(wallet?.balance?.toString() || "0");
-        if (balance < amount) {
+        if (balance < numericAmount) {
           return res.status(400).json({ error: "Insufficient balance" });
         }
       }
@@ -348,7 +353,7 @@ export function registerAdvancedRoutes(app: express.Express) {
       const request = await advancedDb.createWithdrawalRequest({
         entityType,
         entityId,
-        amount: amount.toString(),
+        amount: amount, // Keeping as string for schema if it expects string/decimal
         accountNumber,
         bankName,
         accountHolder,

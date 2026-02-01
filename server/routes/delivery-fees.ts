@@ -7,6 +7,7 @@ import express from "express";
 import { storage } from "../storage";
 import { calculateDeliveryFee, calculateDistance, estimateDeliveryTime } from "../services/deliveryFeeService";
 import { z } from "zod";
+import { coerceRequestData } from "../utils/coercion";
 
 const router = express.Router();
 
@@ -98,6 +99,7 @@ router.get("/settings", async (req, res) => {
 // إنشاء أو تحديث إعدادات رسوم التوصيل (للمدير)
 router.post("/settings", async (req, res) => {
   try {
+    const coercedData = coerceRequestData(req.body);
     const settingsSchema = z.object({
       type: z.enum(['fixed', 'per_km', 'zone_based', 'restaurant_custom']),
       baseFee: z.string().optional(),
@@ -108,7 +110,7 @@ router.post("/settings", async (req, res) => {
       restaurantId: z.string().optional()
     });
 
-    const validatedData = settingsSchema.parse(req.body);
+    const validatedData = settingsSchema.parse(coercedData);
     
     // التحقق من وجود إعدادات سابقة
     const existing = await storage.getDeliveryFeeSettings(validatedData.restaurantId);

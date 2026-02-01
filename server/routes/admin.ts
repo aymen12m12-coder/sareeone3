@@ -45,75 +45,11 @@ import {
   driverWithdrawals
 } from "@shared/schema";
 import { DatabaseStorage } from "../db";
+import { coerceRequestData } from "../utils/coercion";
 
 const router = express.Router();
 const dbStorage = new DatabaseStorage();
 const db = dbStorage.db;
-
-// Helper function to coerce request data for proper Zod validation
-function coerceRequestData(data: any) {
-  const coerced = { ...data };
-  
-  // Convert decimal fields to strings (Zod expects strings for decimal fields)
-  ['minimumOrder', 'deliveryFee', 'perKmFee', 'latitude', 'longitude', 'discountAmount', 'rating', 'commissionRate', 'salary', 'hoursWorked', 'salaryAmount', 'earnings', 'price', 'originalPrice', 'amount', 'subtotal', 'total', 'totalAmount', 'distance', 'driverEarnings', 'restaurantEarnings', 'companyEarnings', 'totalBalance', 'availableBalance', 'withdrawnAmount', 'pendingAmount', 'balanceBefore', 'balanceAfter'].forEach(field => {
-    if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
-      coerced[field] = String(coerced[field]);
-    } else {
-      coerced[field] = undefined; // Use undefined instead of null for optional fields
-    }
-  });
-  
-  // Convert integer fields properly
-  ['reviewCount', 'discountPercent', 'sortOrder', 'quantity'].forEach(field => {
-    if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
-      const parsed = parseInt(coerced[field]);
-      coerced[field] = isNaN(parsed) ? undefined : parsed;
-    } else {
-      coerced[field] = undefined;
-    }
-  });
-  
-  // Properly parse boolean fields
-  ['isOpen', 'isActive', 'isFeatured', 'isNew', 'isTemporarilyClosed', 'isAvailable', 'isSpecialOffer', 'isApproved', 'isRead'].forEach(field => {
-    if (coerced[field] !== undefined && coerced[field] !== null) {
-      const value = coerced[field];
-      if (typeof value === 'string') {
-        coerced[field] = value === 'true' || value === '1';
-      } else if (typeof value === 'number') {
-        coerced[field] = !!value;
-      } else {
-        coerced[field] = Boolean(value);
-      }
-    }
-  });
-  
-  // Handle permissions array
-  if (Array.isArray(coerced.permissions)) {
-    coerced.permissions = JSON.stringify(coerced.permissions);
-  } else if (coerced.permissions === null || coerced.permissions === '') {
-    coerced.permissions = undefined;
-  }
-  
-  // Parse date fields
-  const dateFields = ['validUntil', 'hireDate', 'checkIn', 'checkOut', 'startDate', 'endDate', 'date'];
-  dateFields.forEach(field => {
-    if (coerced[field] !== undefined && coerced[field] !== null && coerced[field] !== '') {
-      const date = new Date(coerced[field]);
-      coerced[field] = isNaN(date.getTime()) ? undefined : date;
-    } else {
-      coerced[field] = undefined;
-    }
-  });
-  
-  // Convert optional text/UUID fields to undefined instead of null
-  ['categoryId', 'temporaryCloseReason', 'address', 'restaurantId'].forEach(field => {
-    if (coerced[field] === null || coerced[field] === '') {
-      coerced[field] = undefined;
-    }
-  });
-  
-  return coerced;
-}
 
 // Schema object for direct database operations
 const schema = {
@@ -848,7 +784,8 @@ router.post("/leave-requests", async (req, res) => {
 
 router.put("/leave-requests/:id", async (req, res) => {
   try {
-    const validatedData = insertLeaveRequestSchema.partial().parse(req.body);
+    const coercedData = coerceRequestData(req.body);
+    const validatedData = insertLeaveRequestSchema.partial().parse(coercedData);
     const updated = await storage.updateLeaveRequest(req.params.id, validatedData);
     if (!updated) return res.status(404).json({ error: "Leave request not found" });
     res.json(updated);
@@ -910,8 +847,11 @@ router.put("/drivers/:id", async (req, res) => {
   try {
     const { id } = req.params;
     
+    // تنظيف وتحويل البيانات باستخدام helper function
+    const coercedData = coerceRequestData(req.body);
+    
     // التحقق من صحة البيانات المحدثة (جزئي)
-    const validatedData = insertDriverSchema.partial().parse(req.body);
+    const validatedData = insertDriverSchema.partial().parse(coercedData);
     
     const updatedDriver = await dbStorage.updateDriver(id, validatedData);
     

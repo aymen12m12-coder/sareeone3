@@ -1,6 +1,7 @@
 import express from "express";
 import { storage } from "../storage";
 import { z } from "zod";
+import { coerceRequestData } from "../utils/coercion";
 
 const router = express.Router();
 
@@ -354,7 +355,8 @@ router.get("/stats", async (req, res) => {
 // تحديث الملف الشخصي للسائق
 router.put("/profile", async (req, res) => {
   try {
-    const { driverId, ...updateData } = req.body;
+    const coercedData = coerceRequestData(req.body);
+    const { driverId, ...updateData } = coercedData;
     
     if (!driverId) {
       return res.status(400).json({ error: "معرف السائق مطلوب" });
