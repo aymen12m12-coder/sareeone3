@@ -11,14 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast'
 import { apiRequest, queryClient } from '@/lib/queryClient'
 import { Restaurant, Category } from '@shared/schema'
-import { Plus, Search, Edit, Trash2, Store, MapPin, Clock, Star } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Store, MapPin, Clock, Star, Map as MapIcon } from 'lucide-react'
 import ImageUpload from '@/components/ImageUpload'
+import MapComponent from './maps/MapComponent'
 
 export default function RestaurantManagement() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [isMapOpen, setIsMapOpen] = useState(false)
   const { toast } = useToast()
 
   // Form state
@@ -170,6 +172,16 @@ export default function RestaurantManagement() {
     })
     setIsEditing(true)
     setIsDialogOpen(true)
+  }
+
+  const handleMapSelect = (lat: number, lng: number, address: string) => {
+    setFormData(prev => ({
+      ...prev,
+      latitude: lat.toString(),
+      longitude: lng.toString(),
+      address: address || prev.address
+    }))
+    setIsMapOpen(false)
   }
 
   const handleDelete = (id: string) => {
@@ -336,13 +348,40 @@ export default function RestaurantManagement() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="latitude">خط العرض</Label>
-                    <Input
-                      id="latitude"
-                      value={formData.latitude || ''}
-                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                      placeholder="31.5204"
-                      data-testid="input-latitude"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="latitude"
+                        value={formData.latitude || ''}
+                        onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                        placeholder="31.5204"
+                        data-testid="input-latitude"
+                      />
+                      <Dialog open={isMapOpen} onOpenChange={setIsMapOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="icon" title="تحديد من الخريطة">
+                            <MapIcon className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
+                          <DialogHeader className="p-4 border-b">
+                            <DialogTitle>تحديد موقع المطعم</DialogTitle>
+                          </DialogHeader>
+                          <div className="h-[400px] w-full">
+                            <MapComponent 
+                              center={[
+                                formData.latitude ? parseFloat(formData.latitude) : 15.3694, 
+                                formData.longitude ? parseFloat(formData.longitude) : 44.1910
+                              ]}
+                              zoom={14}
+                              onLocationSelect={handleMapSelect}
+                            />
+                          </div>
+                          <div className="p-4 bg-gray-50 text-xs text-center text-gray-500">
+                            انقر على الخريطة لتحديد موقع المطعم بدقة
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="longitude">خط الطول</Label>
