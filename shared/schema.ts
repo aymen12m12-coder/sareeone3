@@ -536,18 +536,20 @@ export const selectOrderSchema = createSelectSchema(orders);
 export type Order = z.infer<typeof selectOrderSchema>;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 
-export const insertDriverSchema = createInsertSchema(drivers).partial({
+export const insertDriverSchema = createInsertSchema(drivers).extend({
+  commissionRate: z.preprocess((val) => val === null || val === undefined ? undefined : String(val), z.string().optional()),
+  salaryAmount: z.preprocess((val) => val === null || val === undefined ? undefined : String(val), z.string().optional()),
+  earnings: z.preprocess((val) => val === null || val === undefined ? undefined : String(val), z.string().optional()),
+}).partial({
   id: true,
   createdAt: true,
   isAvailable: true,
   isActive: true,
-  commissionRate: true,
   paymentMode: true,
-  salaryAmount: true,
   email: true,
   vehicleType: true,
   vehicleNumber: true,
-  earnings: true,
+  currentLocation: true,
   updatedAt: true,
 });
 export const selectDriverSchema = createSelectSchema(drivers);

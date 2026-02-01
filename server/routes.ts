@@ -294,6 +294,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // دوال إضافية للسائقين لتتوافق مع لوحة التحكم
+  app.get("/api/drivers/:id/balance", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const balance = await storage.getDriverBalance(id);
+      res.json(balance || { availableBalance: 0, totalEarned: 0, withdrawnAmount: 0 });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch driver balance" });
+    }
+  });
+
+  app.get("/api/drivers/:id/transactions", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const transactions = await storage.getDriverTransactions(id);
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch driver transactions" });
+    }
+  });
+
+  app.get("/api/drivers/:id/commissions", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const commissions = await storage.getDriverCommissions(id);
+      res.json(commissions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch driver commissions" });
+    }
+  });
+
+  app.post("/api/drivers/:id/transactions", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const transaction = await storage.createDriverTransaction({
+        ...req.body,
+        driverId: id,
+      });
+      res.status(201).json(transaction);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create transaction" });
+    }
+  });
+
+  app.post("/api/drivers/:id/commissions", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const commission = await storage.createDriverCommission({
+        ...req.body,
+        driverId: id,
+      });
+      res.status(201).json(commission);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create commission" });
+    }
+  });
+
+  app.post("/api/drivers/:id/withdraw", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { amount } = req.body;
+      const withdrawal = await storage.createDriverWithdrawal({
+        driverId: id,
+        amount,
+        status: 'pending'
+      });
+      res.status(201).json(withdrawal);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to process withdrawal" });
+    }
+  });
+
   // Special Offers
   app.get("/api/special-offers", async (req, res) => {
     try {
