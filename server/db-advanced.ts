@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { 
-  driverReviews, driverEarningsTable, driverWallets, restaurantWallets,
+  driverReviews, driverEarnings, driverWallets, restaurantWallets,
   commissionSettings, withdrawalRequests, driverWorkSessions,
   drivers, orders, users,
   type DriverReview, type InsertDriverReview,
