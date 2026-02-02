@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Check, X, Loader2, Navigation as NavigationIcon, Search } from 'lucide-react';
+import { MapPin, Check, X, Loader2, Navigation as NavigationIcon, Search, ZoomIn, ZoomOut } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default marker icons
@@ -18,7 +18,7 @@ interface LocationPickerProps {
   initialLocation?: [number, number];
 }
 
-// Component to handle map clicks
+// Component to handle map clicks and move the marker
 function LocationMarker({ 
   position, 
   setPosition 
@@ -26,21 +26,31 @@ function LocationMarker({
   position: [number, number] | null; 
   setPosition: (pos: [number, number]) => void;
 }) {
-  useMapEvents({
+  const map = useMapEvents({
     click(e) {
       setPosition([e.latlng.lat, e.latlng.lng]);
+      map.flyTo(e.latlng, map.getZoom());
     },
   });
 
   return position ? <Marker position={position} /> : null;
 }
 
-// Component to update map view when position changes
-function ChangeView({ center }: { center: [number, number] }) {
+// Component to ensure the map fills its container and handles view changes
+function MapController({ center }: { center: [number, number] }) {
   const map = useMap();
+  
+  useEffect(() => {
+    // Crucial for Leaflet in modals - ensures map container is correctly calculated
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+  }, [map]);
+
   useEffect(() => {
     map.setView(center, map.getZoom());
   }, [center, map]);
+
   return null;
 }
 
@@ -57,6 +67,8 @@ export default function LocationPicker({
   const [gettingLocation, setGettingLocation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showResults, setShowResults] = useState(false);
 
   // Default center (Sanaa, Yemen)
   const defaultCenter: [number, number] = [15.3694, 44.1910];
@@ -65,7 +77,7 @@ export default function LocationPicker({
   );
 
   // Reverse geocoding to get address from coordinates
-  const getAddressFromCoordinates = async (lat: number, lng: number) => {
+  const getAddressFromCoordinates = useCallback(async (lat: number, lng: number) => {
     setLoading(true);
     try {
       const response = await fetch(
@@ -75,16 +87,6 @@ export default function LocationPicker({
       
       if (data.display_name) {
         setAddress(data.display_name);
-      } else if (data.address) {
-        // Build address from components
-        const parts = [
-          data.address.road,
-          data.address.neighbourhood,
-          data.address.suburb,
-          data.address.city || data.address.town,
-          data.address.country,
-        ].filter(Boolean);
-        setAddress(parts.join(', '));
       } else {
         setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       }
@@ -94,9 +96,9 @@ export default function LocationPicker({
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Search for address
+  // Search for address with suggestions
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -104,17 +106,13 @@ export default function LocationPicker({
     setIsSearching(true);
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1&accept-language=ar`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&accept-language=ar`
       );
       const data = await response.json();
 
       if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        const newPos: [number, number] = [lat, lon];
-        setPosition(newPos);
-        setMapCenter(newPos);
-        setAddress(data[0].display_name);
+        setSearchResults(data);
+        setShowResults(true);
       } else {
         alert('لم يتم العثور على الموقع المطلوب');
       }
@@ -126,13 +124,23 @@ export default function LocationPicker({
     }
   };
 
+  const selectSearchResult = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    const newPos: [number, number] = [lat, lon];
+    setPosition(newPos);
+    setMapCenter(newPos);
+    setAddress(result.display_name);
+    setShowResults(false);
+    setSearchQuery(result.display_name);
+  };
+
   // Update address when position changes
   useEffect(() => {
-    if (position) {
-      // Only fetch if we don't already have the address from search
+    if (position && !isSearching) {
       getAddressFromCoordinates(position[0], position[1]);
     }
-  }, [position]);
+  }, [position, getAddressFromCoordinates, isSearching]);
 
   // Get current location
   const getCurrentLocation = () => {
@@ -156,11 +164,7 @@ export default function LocationPicker({
         alert('فشل في الحصول على موقعك الحالي');
         setGettingLocation(false);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
@@ -173,31 +177,29 @@ export default function LocationPicker({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4" dir="rtl">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200" dir="rtl">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary to-primary/80 text-white p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <MapPin className="h-6 w-6" />
-              <div>
-                <h2 className="text-xl font-bold">تحديد موقع المطعم</h2>
-                <p className="text-sm text-white/80">ابحث عن الموقع أو انقر على الخريطة</p>
-              </div>
+        <div className="bg-primary text-white p-4 sm:p-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-lg">
+              <MapPin className="h-6 w-6 text-white" />
             </div>
-            {onCancel && (
-              <button
-                onClick={onCancel}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            )}
+            <div>
+              <h2 className="text-xl font-bold">تحديد موقع المطعم بدقة</h2>
+              <p className="text-xs text-white/70">يمكنك البحث، التحريك، التكبير، أو النقر على الموقع</p>
+            </div>
           </div>
+          <button
+            onClick={onCancel}
+            className="hover:bg-white/20 p-2 rounded-full transition-colors"
+          >
+            <X className="h-6 w-6" />
+          </button>
         </div>
 
-        {/* Search Bar */}
-        <div className="p-4 border-b bg-gray-50">
+        {/* Search Bar & Suggestions */}
+        <div className="p-4 border-b bg-gray-50/80 relative z-[10001] shrink-0">
           <form onSubmit={handleSearch} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -205,95 +207,115 @@ export default function LocationPicker({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ابحث عن منطقة، شارع، أو معلم..."
-                className="w-full pr-10 pl-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 text-right"
+                placeholder="ابحث عن المدينة، الحي، أو الشارع..."
+                className="w-full pr-10 pl-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm transition-all text-right"
               />
+              
+              {showResults && searchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-lg overflow-hidden z-[10002]">
+                  {searchResults.map((result, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => selectSearchResult(result)}
+                      className="w-full text-right p-3 hover:bg-primary/5 border-b last:border-0 border-gray-100 transition-colors flex items-start gap-2"
+                    >
+                      <MapPin className="h-4 w-4 text-primary mt-1 shrink-0" />
+                      <span className="text-sm text-gray-700 truncate">{result.display_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               type="submit"
               disabled={isSearching || !searchQuery.trim()}
-              className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50 transition flex items-center gap-2"
+              className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-all font-medium flex items-center gap-2"
             >
               {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              <span>بحث</span>
+              <span className="hidden sm:inline">بحث</span>
             </button>
           </form>
         </div>
 
-        {/* Map */}
-        <div className="flex-1 relative min-h-[400px]">
+        {/* Map Container */}
+        <div className="flex-1 relative z-0">
           <MapContainer
             center={mapCenter}
-            zoom={13}
+            zoom={15}
             style={{ height: '100%', width: '100%' }}
             scrollWheelZoom={true}
+            zoomControl={true}
+            dragging={true}
+            doubleClickZoom={true}
+            touchZoom={true}
+            className="h-full w-full"
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            <ChangeView center={mapCenter} />
+            <MapController center={mapCenter} />
             <LocationMarker position={position} setPosition={setPosition} />
           </MapContainer>
 
-          {/* Get current location button */}
+          {/* Current Location FAB */}
           <button
             onClick={getCurrentLocation}
             disabled={gettingLocation}
-            className="absolute bottom-4 left-4 z-[1000] bg-white rounded-full p-3 shadow-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="absolute bottom-6 left-6 z-[1000] bg-white text-primary rounded-full p-4 shadow-xl hover:bg-gray-50 active:scale-95 transition-all disabled:opacity-50 border border-gray-100"
             title="تحديد موقعي الحالي"
           >
             {gettingLocation ? (
-              <Loader2 className="h-6 w-6 text-primary animate-spin" />
+              <Loader2 className="h-6 w-6 animate-spin" />
             ) : (
-              <NavigationIcon className="h-6 w-6 text-primary" />
+              <NavigationIcon className="h-6 w-6" />
             )}
           </button>
         </div>
 
-        {/* Address display */}
-        <div className="p-4 space-y-4">
-          <div className="bg-gray-50 rounded-lg p-3 border">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              العنوان المحدد:
-            </label>
-            {loading ? (
-              <div className="flex items-center gap-2 text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>جاري تحديد العنوان...</span>
+        {/* Selected Info Footer */}
+        <div className="bg-white border-t p-4 sm:p-6 shrink-0">
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex-1 w-full bg-gray-50 p-4 rounded-xl border border-gray-200">
+              <div className="flex items-start gap-3">
+                <div className="bg-primary/10 p-2 rounded-lg">
+                  <MapPin className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-1">الموقع المختار</p>
+                  {loading ? (
+                    <div className="flex items-center gap-2 text-gray-500 py-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="text-sm">جاري تحديد التفاصيل...</span>
+                    </div>
+                  ) : position ? (
+                    <p className="text-sm text-gray-900 font-medium leading-relaxed">{address}</p>
+                  ) : (
+                    <p className="text-sm text-gray-400">الرجاء النقر على الخريطة لتحديد الموقع</p>
+                  )}
+                </div>
               </div>
-            ) : position ? (
-              <div className="space-y-1">
-                <p className="text-gray-900 font-medium text-sm">{address || 'جاري التحميل...'}</p>
-                <p className="text-xs text-gray-500">
-                  الإحداثيات: {position[0].toFixed(6)}, {position[1].toFixed(6)}
-                </p>
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">لم يتم اختيار موقع بعد</p>
-            )}
+            </div>
+            
+            <div className="flex gap-3 w-full sm:w-auto">
+              <button
+                onClick={onCancel}
+                className="flex-1 sm:flex-none px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <X className="h-5 w-5" />
+                <span>إلغاء</span>
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={!position || loading}
+                className="flex-1 sm:flex-none px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+              >
+                <Check className="h-5 w-5" />
+                <span>تأكيد الموقع</span>
+              </button>
+            </div>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="border-t bg-gray-50 p-4 flex gap-3 justify-end">
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="px-6 py-2 bg-gray-200 text-gray-800 rounded-md font-semibold hover:bg-gray-300 transition flex items-center gap-2"
-            >
-              <X className="h-4 w-4" />
-              إلغاء
-            </button>
-          )}
-          <button
-            onClick={handleConfirm}
-            disabled={!position || loading}
-            className="px-6 py-2 bg-primary text-white rounded-md font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
-          >
-            <Check className="h-4 w-4" />
-            تأكيد الموقع
-          </button>
         </div>
       </div>
     </div>
