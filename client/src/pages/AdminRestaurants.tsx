@@ -15,12 +15,14 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import type { Restaurant, Category } from '@shared/schema';
+import LocationPicker from '@/components/maps/LocationPicker';
 
 export default function AdminRestaurants() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [formData, setFormData] = useState({
@@ -694,31 +696,38 @@ export default function AdminRestaurants() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      const address = formData.address || formData.name;
-                      if (address) {
-                        const encodedAddress = encodeURIComponent(address);
-                        const url = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
-                        window.open(url, '_blank');
-                        toast({
-                          title: "تم فتح الخريطة",
-                          description: "يمكنك نسخ الإحداثيات من الخريطة وإدخالها في الحقول أعلاه",
-                        });
-                      } else {
-                        toast({
-                          title: "أدخل العنوان أولاً",
-                          description: "يرجى إدخال عنوان المطعم للبحث في الخريطة",
-                          variant: "destructive",
-                        });
-                      }
-                    }}
+                    onClick={() => setIsLocationPickerOpen(true)}
                     className="flex-1"
                     data-testid="button-open-maps"
                   >
                     <MapPin className="h-4 w-4 mr-2" />
-                    تحديد الموقع عبر الخريطة
+                    تحديد الموقع عبر الخريطة (مدمج)
                   </Button>
                 </div>
+
+                {isLocationPickerOpen && (
+                  <LocationPicker
+                    onLocationSelect={(lat, lng, address) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        latitude: lat.toString(),
+                        longitude: lng.toString(),
+                        address: address || prev.address
+                      }));
+                      setIsLocationPickerOpen(false);
+                      toast({
+                        title: "تم تحديد الموقع",
+                        description: "تم تحديث الإحداثيات والعنوان بنجاح",
+                      });
+                    }}
+                    onCancel={() => setIsLocationPickerOpen(false)}
+                    initialLocation={
+                      formData.latitude && formData.longitude
+                        ? [parseFloat(formData.latitude), parseFloat(formData.longitude)]
+                        : undefined
+                    }
+                  />
+                )}
 
                 {/* Status Flags */}
                 <div className="space-y-3">
