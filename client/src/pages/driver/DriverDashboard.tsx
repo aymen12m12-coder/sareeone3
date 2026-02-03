@@ -405,6 +405,14 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onLogout }) =>
               <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
               <span className="text-sm">{order.deliveryAddress}</span>
             </div>
+            {order.distance && parseFloat(order.distance) > 0 && (
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-orange-600">
+                  المسافة: {parseFloat(order.distance).toFixed(2)} كم
+                </span>
+              </div>
+            )}
             {order.notes && (
               <div className="flex items-start gap-2">
                 <MessageCircle className="h-4 w-4 text-muted-foreground mt-0.5" />

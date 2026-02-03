@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import type { Restaurant, Category } from '@shared/schema';
-import LocationPicker from '@/components/maps/LocationPicker';
+import LocationPicker from '@/components/maps/GoogleMapPicker';
 
 export default function AdminRestaurants() {
   const { toast } = useToast();
@@ -707,12 +707,14 @@ export default function AdminRestaurants() {
 
                 {isLocationPickerOpen && (
                   <LocationPicker
-                    onLocationSelect={(lat, lng, address) => {
+                    isOpen={isLocationPickerOpen}
+                    onClose={() => setIsLocationPickerOpen(false)}
+                    onLocationSelect={(location) => {
                       setFormData(prev => ({
                         ...prev,
-                        latitude: lat.toString(),
-                        longitude: lng.toString(),
-                        address: address || prev.address
+                        latitude: location.lat.toString(),
+                        longitude: location.lng.toString(),
+                        address: location.address || prev.address
                       }));
                       setIsLocationPickerOpen(false);
                       toast({
@@ -720,10 +722,9 @@ export default function AdminRestaurants() {
                         description: "تم تحديث الإحداثيات والعنوان بنجاح",
                       });
                     }}
-                    onCancel={() => setIsLocationPickerOpen(false)}
                     initialLocation={
                       formData.latitude && formData.longitude
-                        ? [parseFloat(formData.latitude), parseFloat(formData.longitude)]
+                        ? { lat: parseFloat(formData.latitude), lng: parseFloat(formData.longitude) }
                         : undefined
                     }
                   />
