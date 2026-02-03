@@ -13,11 +13,13 @@ interface CartProps {
 }
 
 export function Cart({ isOpen, onClose }: CartProps) {
-  const { state, updateQuantity, removeItem, addNotes, clearCart } = useCart();
+  const { state, updateQuantity, removeItem, addNotes, clearCart, setDeliveryFee: setContextDeliveryFee } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [deliveryFee, setDeliveryFee] = useState(5); // رسوم افتراضية
+  const [deliveryFee, setDeliveryFee] = useState(0); 
+  const [deliveryDetails, setDeliveryDetails] = useState<any>(null);
+  const [isCalculatingFee, setIsCalculatingFee] = useState(false);
   const { toast } = useToast();
   const [customerInfo, setCustomerInfo] = useState({
     name: '',
@@ -30,24 +32,60 @@ export function Cart({ isOpen, onClose }: CartProps) {
     queryKey: ['/api/admin/ui-settings'],
   });
 
-  // حساب رسوم التوصيل بناءً على المسافة
+  // جلب بيانات المطعم للحصول على موقعه بدقة
+  const { data: restaurant } = useQuery({
+    queryKey: [`/api/restaurants/${state.restaurantId}`],
+    enabled: !!state.restaurantId,
+  });
+
+  // حساب رسوم التوصيل بناءً على الموقع والمطعم من السيرفر
   useEffect(() => {
-    if (selectedLocation && selectedLocation.distance) {
-      const baseFee = parseFloat(uiSettings?.find((s: any) => s.key === 'delivery_fee_default')?.value || '5');
-      const perKmFee = parseFloat(uiSettings?.find((s: any) => s.key === 'delivery_fee_per_km')?.value || '2');
-      
-      // حساب رسوم التوصيل: الرسوم الأساسية + (المسافة × رسوم الكيلومتر)
-      const calculatedFee = baseFee + (selectedLocation.distance * perKmFee);
-      setDeliveryFee(Math.round(calculatedFee));
-    }
-  }, [selectedLocation, uiSettings]);
+    const fetchDeliveryFee = async () => {
+      if (selectedLocation && state.restaurantId) {
+        setIsCalculatingFee(true);
+        try {
+          const response = await fetch('/api/delivery-fees/calculate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              customerLat: selectedLocation.lat,
+              customerLng: selectedLocation.lng,
+              restaurantId: state.restaurantId,
+              orderSubtotal: state.subtotal
+            }),
+          });
+          
+          const data = await response.json();
+          if (data.success) {
+            setDeliveryFee(data.fee);
+            setDeliveryDetails(data);
+            setContextDeliveryFee(data.fee);
+          }
+        } catch (error) {
+          console.error('Failed to calculate delivery fee:', error);
+          toast({
+            title: "خطأ في حساب الرسوم",
+            description: "فشل في الاتصال بالسيرفر لحساب رسوم التوصيل",
+            variant: "destructive",
+          });
+        } finally {
+          setIsCalculatingFee(false);
+        }
+      }
+    };
+
+    fetchDeliveryFee();
+  }, [selectedLocation, state.restaurantId, state.subtotal, setContextDeliveryFee, toast]);
 
   // الحصول على موقع المطعم للحساب
   const getRestaurantLocation = () => {
-    if (state.restaurantId) {
-      // في التطبيق الحقيقي، سنجلب موقع المطعم من API
-      // للآن نستخدم موقع افتراضي
-      return { lat: 15.3694, lng: 44.1910 };
+    if (restaurant && restaurant.latitude && restaurant.longitude) {
+      return { 
+        lat: parseFloat(restaurant.latitude), 
+        lng: parseFloat(restaurant.longitude) 
+      };
     }
     return undefined;
   };
@@ -236,18 +274,46 @@ export function Cart({ isOpen, onClose }: CartProps) {
                       <span>المجموع الفرعي:</span>
                       <span>{state.subtotal.toFixed(2)} ر.ي</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>رسوم التوصيل:</span>
-                      <span>{deliveryFee.toFixed(2)} ر.ي</span>
-                      {selectedLocation?.distance && (
-                        <span className="text-xs text-muted-foreground">
-                          ({selectedLocation.distance.toFixed(1)} كم)
-                        </span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between items-center">
+                        <span>رسوم التوصيل:</span>
+                        <div className="text-left">
+                          {!selectedLocation ? (
+                            <span className="text-sm text-amber-600 font-medium">حدد الموقع للحساب</span>
+                          ) : isCalculatingFee ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary inline" />
+                          ) : (
+                            <>
+                              <span className={deliveryDetails?.isFreeDelivery ? "line-through text-gray-400" : ""}>
+                                {deliveryFee.toFixed(2)} ر.ي
+                              </span>
+                              {deliveryDetails?.isFreeDelivery && (
+                                <span className="text-green-600 font-medium mr-2">مجاني</span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {selectedLocation && deliveryDetails && !isCalculatingFee && (
+                        <div className="flex flex-col text-xs text-muted-foreground">
+                          {deliveryDetails.distance > 0 && (
+                            <span>المسافة: {deliveryDetails.distance.toFixed(2)} كم</span>
+                          )}
+                          {deliveryDetails.estimatedTime && (
+                            <span>وقت التوصيل المتوقع: {deliveryDetails.estimatedTime}</span>
+                          )}
+                          {deliveryDetails.freeDeliveryReason && (
+                            <span className="text-green-600 mt-1">{deliveryDetails.freeDeliveryReason}</span>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="flex justify-between font-bold text-lg border-t pt-2">
                       <span>المجموع الكلي:</span>
-                      <span className="text-red-500">{(state.subtotal + deliveryFee).toFixed(2)} ر.ي</span>
+                      <span className="text-red-500">
+                        {selectedLocation ? (state.subtotal + deliveryFee).toFixed(2) : state.subtotal.toFixed(2)} ر.ي
+                      </span>
                     </div>
                   </div>
 
@@ -297,10 +363,19 @@ export function Cart({ isOpen, onClose }: CartProps) {
                           <div>
                             <p className="font-medium text-green-800">{selectedLocation.area}</p>
                             <p className="text-sm text-green-600">{selectedLocation.address}</p>
-                            {selectedLocation.distance && (
-                              <p className="text-xs text-green-600">
-                                المسافة: {selectedLocation.distance.toFixed(1)} كم
-                              </p>
+                            {deliveryDetails && (
+                              <div className="mt-1 space-y-0.5">
+                                {deliveryDetails.distance > 0 && (
+                                  <p className="text-xs text-green-600">
+                                    المسافة: {deliveryDetails.distance.toFixed(2)} كم
+                                  </p>
+                                )}
+                                {deliveryDetails.estimatedTime && (
+                                  <p className="text-xs text-green-600 font-medium">
+                                    الوقت المتوقع: {deliveryDetails.estimatedTime}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                           <Button
