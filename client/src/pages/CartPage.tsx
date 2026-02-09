@@ -30,32 +30,33 @@ export default function CartPage() {
   });
 
   // Calculate delivery fee whenever subtotal or location changes
-  useEffect(() => {
-    if (!restaurant) return;
-
-    let fee = 5; // Default fee
-
-    if (userLocation.position && restaurant.latitude && restaurant.longitude) {
-      const distance = calculateDistance(
-        userLocation.position.coords.latitude,
-        userLocation.position.coords.longitude,
-        parseFloat(String(restaurant.latitude)),
-        parseFloat(String(restaurant.longitude))
-      );
-
-      fee = calculateDeliveryFee(distance, {
-        baseFee: parseFloat(String(restaurant.deliveryFee || 0)),
-        perKmFee: parseFloat(String(restaurant.perKmFee || 0)),
-        minFee: 5,
-        maxFee: 50,
-        subtotal: subtotal
+  const calculateFeeMutation = useMutation({
+    mutationFn: async () => {
+      if (!restaurantId || !userLocation.position) return;
+      
+      const response = await apiRequest('POST', '/api/delivery-fees/calculate', {
+        restaurantId,
+        customerLat: userLocation.position.coords.latitude,
+        customerLng: userLocation.position.coords.longitude,
+        orderSubtotal: subtotal
       });
-    } else {
-      fee = parseFloat(String(restaurant.deliveryFee || 5));
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data && data.success) {
+        setDeliveryFee(data.fee);
+      }
     }
+  });
 
-    setDeliveryFee(fee);
-  }, [restaurant, userLocation.position, subtotal]);
+  useEffect(() => {
+    if (restaurantId && userLocation.position) {
+      calculateFeeMutation.mutate();
+    } else if (restaurant) {
+      // Fallback to basic delivery fee if location not available
+      setDeliveryFee(parseFloat(String(restaurant.deliveryFee || 5)));
+    }
+  }, [restaurantId, userLocation.position, subtotal, restaurant]);
 
   const [orderForm, setOrderForm] = useState({
     customerName: '',
