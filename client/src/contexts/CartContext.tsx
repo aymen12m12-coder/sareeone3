@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { MenuItem } from '../../../shared/schema.js';
+import { MenuItem } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
 
 export interface CartItem extends MenuItem {
@@ -35,14 +35,7 @@ const initialState: CartState = {
 function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case 'ADD_ITEM': {
-      // إذا كان المطعم مختلفاً، امسح السلة
-      if (state.restaurantId && state.restaurantId !== action.restaurantId) {
-        if (!confirm('إضافة عناصر من مطعم آخر سيمسح السلة الحالية. هل تريد المتابعة؟')) {
-          return state;
-        }
-        state = { ...initialState };
-      }
-
+      // إزالة التحقق من المطعم من هنا ونقله إلى دالة addItem
       const existingItem = state.items.find(item => item.id === action.item.id);
       let newItems;
 
@@ -189,6 +182,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addItem = (item: MenuItem, restaurantId: string, restaurantName: string) => {
+    // التحقق من المطعم قبل الإضافة
+    if (state.restaurantId && state.restaurantId !== restaurantId) {
+      const wantToClear = window.confirm('إضافة عناصر من مطعم آخر سيمسح السلة الحالية. هل تريد المتابعة؟');
+      if (!wantToClear) return;
+      
+      dispatch({ type: 'CLEAR_CART' });
+    }
+
     // التحقق من وجود العنصر في السلة لتحديد نوع الإشعار
     const existingItem = state.items.find(cartItem => cartItem.id === item.id);
     
