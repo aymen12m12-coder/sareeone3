@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'; // أضف useEffect
-import { Minus, Plus, Trash2, ShoppingBag, X, MapPin } from 'lucide-react'; // أضف MapPin
+import { useState, useEffect } from 'react';
+import { Minus, Plus, Trash2, ShoppingBag, X, MapPin, Loader2 } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { GoogleMapsLocationPicker, LocationData } from './GoogleMapsLocationPicker';
 import { apiRequest } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button'; // أضف استيراد Button
+import { Button } from '@/components/ui/button';
+import { useLocation } from '../contexts/LocationContext';
 
 interface CartProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface CartProps {
 
 export function Cart({ isOpen, onClose }: CartProps) {
   const { state, updateQuantity, removeItem, addNotes, clearCart, setDeliveryFee: setContextDeliveryFee } = useCart();
+  const { location: userLocation, getCurrentLocation } = useLocation();
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -26,6 +28,26 @@ export function Cart({ isOpen, onClose }: CartProps) {
     phone: '',
     notes: ''
   });
+
+  // جلب موقع العميل تلقائياً عند فتح السلة
+  useEffect(() => {
+    if (isOpen && !userLocation.position && !userLocation.error) {
+      getCurrentLocation();
+    }
+  }, [isOpen, userLocation.position, getCurrentLocation]);
+
+  // تحديث الموقع المختار تلقائياً عند توفر موقع العميل
+  useEffect(() => {
+    if (userLocation.position && !selectedLocation) {
+      const { latitude, longitude } = userLocation.position.coords;
+      setSelectedLocation({
+        lat: latitude,
+        lng: longitude,
+        address: 'موقعي الحالي',
+        area: 'تم التحديد تلقائياً'
+      });
+    }
+  }, [userLocation.position, selectedLocation]);
 
   // جلب إعدادات رسوم التوصيل
   const { data: uiSettings } = useQuery({
@@ -41,7 +63,11 @@ export function Cart({ isOpen, onClose }: CartProps) {
   // حساب رسوم التوصيل بناءً على الموقع والمطعم من السيرفر
   useEffect(() => {
     const fetchDeliveryFee = async () => {
-      if (selectedLocation && state.restaurantId) {
+      // نستخدم إما الموقع المختار يدوياً أو موقع العميل من المتصفح
+      const lat = selectedLocation?.lat || userLocation.position?.coords.latitude;
+      const lng = selectedLocation?.lng || userLocation.position?.coords.longitude;
+
+      if (lat && lng && state.restaurantId) {
         setIsCalculatingFee(true);
         try {
           const response = await fetch('/api/delivery-fees/calculate', {
@@ -50,8 +76,8 @@ export function Cart({ isOpen, onClose }: CartProps) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              customerLat: selectedLocation.lat,
-              customerLng: selectedLocation.lng,
+              customerLat: lat,
+              customerLng: lng,
               restaurantId: state.restaurantId,
               orderSubtotal: state.subtotal
             }),
@@ -65,19 +91,16 @@ export function Cart({ isOpen, onClose }: CartProps) {
           }
         } catch (error) {
           console.error('Failed to calculate delivery fee:', error);
-          toast({
-            title: "خطأ في حساب الرسوم",
-            description: "فشل في الاتصال بالسيرفر لحساب رسوم التوصيل",
-            variant: "destructive",
-          });
         } finally {
           setIsCalculatingFee(false);
         }
       }
     };
 
-    fetchDeliveryFee();
-  }, [selectedLocation, state.restaurantId, state.subtotal, setContextDeliveryFee, toast]);
+    if (isOpen) {
+      fetchDeliveryFee();
+    }
+  }, [isOpen, selectedLocation, userLocation.position, state.restaurantId, state.subtotal, setContextDeliveryFee]);
 
   // الحصول على موقع المطعم للحساب
   const getRestaurantLocation = () => {
@@ -278,24 +301,34 @@ export function Cart({ isOpen, onClose }: CartProps) {
                       <div className="flex justify-between items-center">
                         <span>رسوم التوصيل:</span>
                         <div className="text-left">
-                          {!selectedLocation ? (
-                            <span className="text-sm text-amber-600 font-medium">حدد الموقع للحساب</span>
-                          ) : isCalculatingFee ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-primary inline" />
-                          ) : (
+                          {isCalculatingFee ? (
+                            <div className="flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin text-red-500" />
+                              <span className="text-xs text-gray-400">جاري الحساب...</span>
+                            </div>
+                          ) : deliveryFee > 0 || (deliveryDetails && deliveryDetails.success) ? (
                             <>
-                              <span className={deliveryDetails?.isFreeDelivery ? "line-through text-gray-400" : ""}>
+                              <span className={deliveryDetails?.isFreeDelivery ? "line-through text-gray-400" : "font-bold text-red-500"}>
                                 {deliveryFee.toFixed(2)} ر.ي
                               </span>
                               {deliveryDetails?.isFreeDelivery && (
                                 <span className="text-green-600 font-medium mr-2">مجاني</span>
                               )}
                             </>
+                          ) : userLocation.isLoading ? (
+                            <div className="flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
+                              <span className="text-xs text-amber-600">تحديد الموقع...</span>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-amber-600 font-medium">
+                              {userLocation.error ? "يرجى السماح بالوصول للموقع" : "حدد الموقع للحساب"}
+                            </span>
                           )}
                         </div>
                       </div>
                       
-                      {selectedLocation && deliveryDetails && !isCalculatingFee && (
+                      {(selectedLocation || userLocation.position) && deliveryDetails && !isCalculatingFee && (
                         <div className="flex flex-col text-xs text-muted-foreground">
                           {deliveryDetails.distance > 0 && (
                             <span>المسافة: {deliveryDetails.distance.toFixed(2)} كم</span>
