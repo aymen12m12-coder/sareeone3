@@ -131,12 +131,16 @@ export async function calculateDeliveryFee(
 
   // موقع المطعم
   const restaurantLocation: DeliveryLocation = {
-    lat: parseFloat(restaurant.latitude || '0'),
-    lng: parseFloat(restaurant.longitude || '0')
+    lat: restaurant.latitude ? parseFloat(String(restaurant.latitude)) : 0,
+    lng: restaurant.longitude ? parseFloat(String(restaurant.longitude)) : 0
   };
+
+  console.log(`[DeliveryCalc] Restaurant: ${restaurant.name}, Location: ${restaurantLocation.lat}, ${restaurantLocation.lng}`);
+  console.log(`[DeliveryCalc] Customer: ${customerLocation.lat}, ${customerLocation.lng}`);
 
   // التحقق من وجود إحداثيات المطعم
   if (restaurantLocation.lat === 0 && restaurantLocation.lng === 0) {
+    console.log(`[DeliveryCalc] Warning: Restaurant has no coordinates. Using fallback.`);
     // استخدام رسوم المطعم المخصصة أو الرسوم الأساسية من الإعدادات العامة إذا لم تكن هناك إحداثيات
     const fallbackFee = restaurantBaseFee > 0 ? restaurantBaseFee : feeSettings.baseFee;
     
