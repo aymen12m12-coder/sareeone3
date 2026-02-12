@@ -45,14 +45,27 @@ export default function CartPage() {
     onSuccess: (data) => {
       if (data && data.success) {
         setDeliveryFee(data.fee);
+        if (data.distance > 0) {
+          toast({
+            title: "تم حساب رسوم التوصيل",
+            description: `المسافة: ${data.distance} كم - الرسوم: ${data.fee} ريال`,
+          });
+        }
       }
     }
   });
 
+  // طلب الموقع تلقائياً عند فتح السلة
+  useEffect(() => {
+    if (!userLocation.position && !userLocation.error && !userLocation.isLoading) {
+      getCurrentLocation();
+    }
+  }, []);
+
   useEffect(() => {
     if (restaurantId && userLocation.position) {
       calculateFeeMutation.mutate();
-    } else if (restaurant) {
+    } else if (restaurant && !userLocation.isLoading) {
       // Fallback to basic delivery fee if location not available
       setDeliveryFee(parseFloat(String(restaurant.deliveryFee || 5)));
     }
